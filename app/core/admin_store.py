@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from app.core.pipeline import normalize_question_text
+from app.core.db_migrations import apply_v2_schema
 
 
 DB_PATH = Path("data/admin_review.db")
@@ -94,6 +95,8 @@ class AdminStore:
                     "ALTER TABLE unresolved_queries ADD COLUMN user_selected_category TEXT"
                 )
 
+            apply_v2_schema(conn)
+
     def log_unresolved_query(
         self,
         *,
@@ -164,6 +167,7 @@ class AdminStore:
         normalized_question = normalize_question_text(normalized_question or question)
 
         with self._conn() as conn:
+            citations_json = json.dumps(citations or [], ensure_ascii=False)
             cur = conn.execute(
                 """
                 INSERT INTO answer_feedback
@@ -177,7 +181,23 @@ class AdminStore:
                     answer_text,
                     1 if satisfied else 0,
                     comment,
-                    json.dumps(citations or [], ensure_ascii=False),
+                    citations_json,
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO user_feedback
+                (question, normalized_question, category, answer_text, satisfied, comment, citations_json, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'open')
+                """,
+                (
+                    question,
+                    normalized_question,
+                    category,
+                    answer_text,
+                    1 if satisfied else 0,
+                    comment,
+                    citations_json,
                 ),
             )
             return int(cur.lastrowid)
@@ -198,8 +218,8 @@ class AdminStore:
             cur = conn.execute(
                 """
                 INSERT INTO expert_answers
-                (question, normalized_question, category, expert_answer, source_note)
-                VALUES (?, ?, ?, ?, ?)
+                (question, normalized_question, category, expert_answer, source_note, approval_status)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (
                     question,
@@ -207,6 +227,7 @@ class AdminStore:
                     category,
                     expert_answer,
                     source_note,
+                    "approved",
                 ),
             )
 

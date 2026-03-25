@@ -5,11 +5,11 @@ from difflib import SequenceMatcher
 from typing import List, Tuple
 
 from app.core.config import MIN_CONTEXT_CHARS
+from app.core.constants import REFUSAL_TEXT
 from app.core.llm import generate_answer
 from app.core.retrieval import Retriever
 
 
-REFUSAL_TEXT = "The answer is not available in the approved document set."
 DIRECT_MATCH_THRESHOLD = 0.80
 
 
