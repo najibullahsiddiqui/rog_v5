@@ -226,6 +226,11 @@ function renderMiniDistributions(summary = {}) {
   renderSimpleList(categoryDistribution, summary.category_distribution || [], "category");
 }
 
+function showLoading(target, label = "Loading...") {
+  if (!target) return;
+  target.innerHTML = `<div class="empty-state loading-state">${escapeHtml(label)}</div>`;
+}
+
 function renderChips(container, activeValue, onClickName) {
   if (!container) return;
 
@@ -472,6 +477,8 @@ async function loadSummary() {
 }
 
 async function loadUnresolved() {
+  showLoading(unresolvedTable, "Loading unresolved queries...");
+  showLoading(unresolvedTableOverview, "Loading unresolved queries...");
   const res = await fetch("/api/admin/unresolved");
   const data = await res.json();
   state.unresolvedItems = data.items || [];
@@ -479,6 +486,8 @@ async function loadUnresolved() {
 }
 
 async function loadFeedback() {
+  showLoading(feedbackTable, "Loading feedback...");
+  showLoading(feedbackTableOverview, "Loading feedback...");
   const res = await fetch("/api/admin/feedback");
   const data = await res.json();
   state.feedbackItems = data.items || [];
@@ -559,6 +568,9 @@ function renderTrainBotHub() {
 }
 
 async function loadTrainBotHub() {
+  showLoading(trainBotQueueTable, "Loading train-bot queue...");
+  showLoading(trainBotJobsTable, "Loading training jobs...");
+  showLoading(trainBotAuditTable, "Loading audit logs...");
   const [queueRes, jobsRes, auditRes] = await Promise.all([
     fetch("/api/admin/train-bot/queue?limit=200"),
     fetch("/api/admin/train-bot/jobs?limit=50"),
@@ -689,6 +701,7 @@ function renderChatHistory() {
 }
 
 async function loadChatHistorySessions() {
+  showLoading(chatHistorySessionsTable, "Loading chat sessions...");
   const query = chatHistoryFilterQuery();
   const res = await fetch(`/api/admin/chat-history/sessions?${query}`);
   const data = await res.json();
@@ -697,6 +710,7 @@ async function loadChatHistorySessions() {
 }
 
 async function openChatHistorySession(sessionId) {
+  showLoading(chatHistoryTranscript, "Loading transcript...");
   state.chatHistorySelectedSessionId = Number(sessionId);
   const res = await fetch(`/api/admin/chat-history/sessions/${state.chatHistorySelectedSessionId}`);
   const data = await res.json();
@@ -772,6 +786,7 @@ function renderQnaPairs() {
 }
 
 async function loadQnaPairs() {
+  showLoading(qnaPairsTable, "Loading Q&A pairs...");
   const search = encodeURIComponent((qnaSearchInput?.value || "").trim());
   const status = encodeURIComponent(qnaStatusFilter?.value || "active");
   const approval = encodeURIComponent(qnaApprovalFilter?.value || "approved");
@@ -938,6 +953,8 @@ function renderCategorySynonyms() {
 }
 
 async function loadCategories() {
+  showLoading(categoriesTable, "Loading categories...");
+  showLoading(categoriesStatsTable, "Loading category stats...");
   const res = await fetch("/api/admin/categories?include_inactive=true");
   const data = await res.json();
   state.categories = data.items || [];
@@ -1094,6 +1111,7 @@ function renderDecisionTrees() {
 }
 
 async function loadDecisionTrees() {
+  showLoading(decisionTreesTable, "Loading decision trees...");
   const res = await fetch("/api/admin/decision-trees?include_inactive=true");
   const data = await res.json();
   state.decisionTrees = data.items || [];
@@ -1257,6 +1275,7 @@ function renderSourceDocuments() {
 }
 
 async function loadDataSources() {
+  showLoading(sourcesTable, "Loading data sources...");
   const res = await fetch("/api/admin/data-sources");
   const data = await res.json();
   state.dataSources = data.items || [];
@@ -1652,6 +1671,11 @@ function setupSidebarNavigation() {
 
   menuItems.forEach((btn) => {
     btn.addEventListener("click", () => {
+      const href = btn.dataset.href;
+      if (href) {
+        window.location.href = href;
+        return;
+      }
       const section = btn.dataset.section;
       setActiveView(section);
     });

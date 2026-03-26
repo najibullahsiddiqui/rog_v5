@@ -37,29 +37,88 @@
                   d="M3 13h8V3H3v10zm10 8h8V11h-8v10zM3 21h8v-6H3v6zm10-10h8V3h-8v8z"></path>
               </svg>
             </span>
-            <span class="menu-text">Overview</span>
+            <span class="menu-text">Dashboard</span>
           </button>
 
-          <button class="menu-item" type="button" data-section="unresolved">
+          <button class="menu-item" type="button" data-href="/admin/analytics">
             <span class="menu-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z">
+                  d="M4 19h16M7 16V9m5 7V5m5 11v-6">
                 </path>
               </svg>
             </span>
-            <span class="menu-text">Unresolved</span>
+            <span class="menu-text">Analytics</span>
           </button>
 
-          <button class="menu-item" type="button" data-section="feedback">
+          <button class="menu-item" type="button" data-section="sources">
             <span class="menu-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z">
-                </path>
+                  d="M4 7h16M4 12h16M4 17h16"></path>
               </svg>
             </span>
-            <span class="menu-text">Feedback</span>
+            <span class="menu-text">Data Sources</span>
+          </button>
+
+          <button class="menu-item" type="button" data-section="json-convert">
+            <span class="menu-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"></path>
+              </svg>
+            </span>
+            <span class="menu-text">Convert JSON</span>
+          </button>
+
+          <button class="menu-item" type="button" data-section="qna-pairs">
+            <span class="menu-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+              </svg>
+            </span>
+            <span class="menu-text">Q&A Pairs</span>
+          </button>
+
+          <button class="menu-item" type="button" data-section="categories">
+            <span class="menu-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M5 3h14a2 2 0 012 2v4H3V5a2 2 0 012-2zm-2 8h18v8a2 2 0 01-2 2H5a2 2 0 01-2-2v-8z"></path>
+              </svg>
+            </span>
+            <span class="menu-text">Categories</span>
+          </button>
+
+          <button class="menu-item" type="button" data-section="decision-trees">
+            <span class="menu-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M4 6h6v6H4zM14 4h6v4h-6zM14 16h6v4h-6zM10 9h4m-2 0v7"></path>
+              </svg>
+            </span>
+            <span class="menu-text">Decision Trees</span>
+          </button>
+
+          <button class="menu-item" type="button" data-section="train-bot">
+            <span class="menu-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9.75 3a1.5 1.5 0 00-1.5 1.5V6H6.75A1.75 1.75 0 005 7.75v8.5C5 17.216 5.784 18 6.75 18h10.5c.966 0 1.75-.784 1.75-1.75v-8.5A1.75 1.75 0 0017.25 6h-1.5V4.5A1.5 1.5 0 0014.25 3h-4.5zM9 10h6M9 13h6"></path>
+              </svg>
+            </span>
+            <span class="menu-text">Train Bot</span>
+          </button>
+
+          <button class="menu-item" type="button" data-section="chat-history">
+            <span class="menu-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M8 10h8M8 14h5M6 4h12a2 2 0 012 2v12l-4-3H6a2 2 0 01-2-2V6a2 2 0 012-2z"></path>
+              </svg>
+            </span>
+            <span class="menu-text">Chat History</span>
           </button>
 
           <button class="menu-item" type="button" data-section="sources">
@@ -141,11 +200,10 @@
       <header class="topbar">
         <div>
           <h1>IP Operations</h1>
-          <p class="subtitle">Monitor and manage intellectual property queries</p>
+          <p class="subtitle">Enterprise operations panel for AI assistant quality and governance</p>
         </div>
 
         <div class="toolbar toolbar-top">
-          <a class="btn btn-secondary" href="/admin/analytics">Analytics</a>
           <button id="refreshBtn" class="btn btn-primary" type="button">
             <span>↻</span>
             <span>Refresh</span>

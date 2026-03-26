@@ -579,6 +579,24 @@ textarea {
   font-weight: 600;
 }
 
+.loading-state {
+  position: relative;
+  overflow: hidden;
+}
+
+.loading-state::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(63, 99, 246, 0.08), transparent);
+  animation: admin-shimmer 1.2s linear infinite;
+}
+
+@keyframes admin-shimmer {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+
 .modal {
   position: fixed;
   inset: 0;
