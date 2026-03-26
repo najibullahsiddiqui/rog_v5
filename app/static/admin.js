@@ -19,6 +19,93 @@ const chipsOverviewUnresolved = document.getElementById("chipsOverviewUnresolved
 const chipsOverviewFeedback = document.getElementById("chipsOverviewFeedback");
 const chipsUnresolved = document.getElementById("chipsUnresolved");
 const chipsFeedback = document.getElementById("chipsFeedback");
+const sourcesTable = document.getElementById("sourcesTable");
+const sourceDocumentsTable = document.getElementById("sourceDocumentsTable");
+const addSourceBtn = document.getElementById("addSourceBtn");
+const sourceNameInput = document.getElementById("sourceName");
+const sourceTypeInput = document.getElementById("sourceType");
+const sourceUriInput = document.getElementById("sourceUri");
+const sourceFormatInput = document.getElementById("sourceFormat");
+const jsonConvertTarget = document.getElementById("jsonConvertTarget");
+const jsonConvertInput = document.getElementById("jsonConvertInput");
+const jsonFileInput = document.getElementById("jsonFileInput");
+const previewJsonBtn = document.getElementById("previewJsonBtn");
+const importJsonBtn = document.getElementById("importJsonBtn");
+const jsonMappingFields = document.getElementById("jsonMappingFields");
+const jsonPreviewTable = document.getElementById("jsonPreviewTable");
+const jsonErrorsBox = document.getElementById("jsonErrorsBox");
+const qnaSearchInput = document.getElementById("qnaSearchInput");
+const qnaStatusFilter = document.getElementById("qnaStatusFilter");
+const qnaApprovalFilter = document.getElementById("qnaApprovalFilter");
+const qnaRefreshBtn = document.getElementById("qnaRefreshBtn");
+const qnaPairsTable = document.getElementById("qnaPairsTable");
+const qnaEditId = document.getElementById("qnaEditId");
+const qnaQuestionInput = document.getElementById("qnaQuestionInput");
+const qnaAnswerInput = document.getElementById("qnaAnswerInput");
+const qnaCategoryInput = document.getElementById("qnaCategoryInput");
+const qnaSourceNoteInput = document.getElementById("qnaSourceNoteInput");
+const qnaPriorityInput = document.getElementById("qnaPriorityInput");
+const qnaApprovalInput = document.getElementById("qnaApprovalInput");
+const qnaExactFlag = document.getElementById("qnaExactFlag");
+const qnaSemanticFlag = document.getElementById("qnaSemanticFlag");
+const qnaSaveBtn = document.getElementById("qnaSaveBtn");
+const qnaClearBtn = document.getElementById("qnaClearBtn");
+const categoriesRefreshBtn = document.getElementById("categoriesRefreshBtn");
+const categoriesTable = document.getElementById("categoriesTable");
+const categoriesStatsTable = document.getElementById("categoriesStatsTable");
+const categoryEditId = document.getElementById("categoryEditId");
+const categoryCodeInput = document.getElementById("categoryCodeInput");
+const categoryNameInput = document.getElementById("categoryNameInput");
+const categoryOrderInput = document.getElementById("categoryOrderInput");
+const categoryActiveInput = document.getElementById("categoryActiveInput");
+const categoryDescriptionInput = document.getElementById("categoryDescriptionInput");
+const categoryRoutingHintInput = document.getElementById("categoryRoutingHintInput");
+const categoryPromptHintInput = document.getElementById("categoryPromptHintInput");
+const categoryScopeInput = document.getElementById("categoryScopeInput");
+const categorySynonymInput = document.getElementById("categorySynonymInput");
+const categoryAddSynonymBtn = document.getElementById("categoryAddSynonymBtn");
+const categorySaveBtn = document.getElementById("categorySaveBtn");
+const categoryClearBtn = document.getElementById("categoryClearBtn");
+const categorySynonymsTable = document.getElementById("categorySynonymsTable");
+const treesRefreshBtn = document.getElementById("treesRefreshBtn");
+const decisionTreesTable = document.getElementById("decisionTreesTable");
+const treeEditId = document.getElementById("treeEditId");
+const treeNameInput = document.getElementById("treeNameInput");
+const treeKeyInput = document.getElementById("treeKeyInput");
+const treeCategoryInput = document.getElementById("treeCategoryInput");
+const treeActiveInput = document.getElementById("treeActiveInput");
+const treeVersionInput = document.getElementById("treeVersionInput");
+const treeStatusInput = document.getElementById("treeStatusInput");
+const treeTriggersInput = document.getElementById("treeTriggersInput");
+const treeDescriptionInput = document.getElementById("treeDescriptionInput");
+const treeNodesJsonInput = document.getElementById("treeNodesJsonInput");
+const treeEdgesJsonInput = document.getElementById("treeEdgesJsonInput");
+const treeSaveBtn = document.getElementById("treeSaveBtn");
+const treeClearBtn = document.getElementById("treeClearBtn");
+const trainBotRefreshBtn = document.getElementById("trainBotRefreshBtn");
+const trainBotQueueTable = document.getElementById("trainBotQueueTable");
+const trainBotJobsTable = document.getElementById("trainBotJobsTable");
+const trainBotAuditTable = document.getElementById("trainBotAuditTable");
+const trainBotActionPromoteExpertBtn = document.getElementById("trainBotActionPromoteExpertBtn");
+const trainBotActionPromoteQnaBtn = document.getElementById("trainBotActionPromoteQnaBtn");
+const trainBotActionClassifyWrongBtn = document.getElementById("trainBotActionClassifyWrongBtn");
+const trainBotActionResolveWrongBtn = document.getElementById("trainBotActionResolveWrongBtn");
+const trainBotActionCategoryFixBtn = document.getElementById("trainBotActionCategoryFixBtn");
+const trainBotActionSourceIssueBtn = document.getElementById("trainBotActionSourceIssueBtn");
+const trainBotActionReindexBtn = document.getElementById("trainBotActionReindexBtn");
+const trainBotActionCategoryRefreshBtn = document.getElementById("trainBotActionCategoryRefreshBtn");
+const trainBotActionThresholdRefreshBtn = document.getElementById("trainBotActionThresholdRefreshBtn");
+const chatHistoryDateFrom = document.getElementById("chatHistoryDateFrom");
+const chatHistoryDateTo = document.getElementById("chatHistoryDateTo");
+const chatHistoryCategory = document.getElementById("chatHistoryCategory");
+const chatHistoryResponseMode = document.getElementById("chatHistoryResponseMode");
+const chatHistoryFeedbackStatus = document.getElementById("chatHistoryFeedbackStatus");
+const chatHistoryApplyFiltersBtn = document.getElementById("chatHistoryApplyFiltersBtn");
+const chatHistoryExportBtn = document.getElementById("chatHistoryExportBtn");
+const chatHistorySessionsTable = document.getElementById("chatHistorySessionsTable");
+const chatHistoryTranscript = document.getElementById("chatHistoryTranscript");
+const chatHistoryAdminNote = document.getElementById("chatHistoryAdminNote");
+const chatHistorySaveNoteBtn = document.getElementById("chatHistorySaveNoteBtn");
 
 const expertModal = document.getElementById("expertModal");
 const modalOverlay = document.getElementById("modalOverlay");
@@ -45,6 +132,21 @@ const state = {
   feedbackCategory: "",
   unresolvedSearch: "",
   feedbackSearch: "",
+  dataSources: [],
+  activeSourceId: null,
+  sourceDocuments: [],
+  jsonPreview: null,
+  qnaPairs: [],
+  categories: [],
+  categorySynonyms: [],
+  decisionTrees: [],
+  trainBotQueue: [],
+  trainBotJobs: [],
+  trainBotAudit: [],
+  trainBotSelected: null,
+  chatHistorySessions: [],
+  chatHistorySelectedSessionId: null,
+  chatHistoryDetail: null,
 };
 
 function escapeHtml(text) {
@@ -122,6 +224,11 @@ function renderSimpleList(target, rows, keyField) {
 function renderMiniDistributions(summary = {}) {
   renderSimpleList(answerModeDistribution, summary.answer_mode_distribution || [], "answer_mode");
   renderSimpleList(categoryDistribution, summary.category_distribution || [], "category");
+}
+
+function showLoading(target, label = "Loading...") {
+  if (!target) return;
+  target.innerHTML = `<div class="empty-state loading-state">${escapeHtml(label)}</div>`;
 }
 
 function renderChips(container, activeValue, onClickName) {
@@ -370,6 +477,8 @@ async function loadSummary() {
 }
 
 async function loadUnresolved() {
+  showLoading(unresolvedTable, "Loading unresolved queries...");
+  showLoading(unresolvedTableOverview, "Loading unresolved queries...");
   const res = await fetch("/api/admin/unresolved");
   const data = await res.json();
   state.unresolvedItems = data.items || [];
@@ -377,10 +486,968 @@ async function loadUnresolved() {
 }
 
 async function loadFeedback() {
+  showLoading(feedbackTable, "Loading feedback...");
+  showLoading(feedbackTableOverview, "Loading feedback...");
   const res = await fetch("/api/admin/feedback");
   const data = await res.json();
   state.feedbackItems = data.items || [];
   renderFeedbackTables();
+}
+
+function buildTrainBotQueueTable(items) {
+  if (!items.length) return `<div class="empty-state">No unresolved or wrong-answer items in queue.</div>`;
+  return `
+    <table class="admin-table">
+      <thead><tr><th>Pick</th><th>Type</th><th>ID</th><th>Category</th><th>Question</th><th>Detail</th><th>Repeats</th><th>Suggested actions</th><th>Created</th></tr></thead>
+      <tbody>
+        ${items.map((item) => `
+          <tr class="${state.trainBotSelected && Number(state.trainBotSelected.id) === Number(item.id) && state.trainBotSelected.queue_type === item.queue_type ? "active-row" : ""}">
+            <td><button class="action-btn" onclick="selectTrainBotItem('${escapeHtml(item.queue_type)}', ${Number(item.id)})">Select</button></td>
+            <td>${escapeHtml(item.queue_type)}</td>
+            <td>${escapeHtml(item.id)}</td>
+            <td>${escapeHtml(item.category || "unassigned")}</td>
+            <td class="question-cell">${escapeHtml(item.question || "")}</td>
+            <td>${escapeHtml(item.detail || "—")}</td>
+            <td>${escapeHtml(item.repeat_count || 1)}</td>
+            <td>${escapeHtml((item.suggested_actions || []).join(", "))}</td>
+            <td>${escapeHtml(item.created_at || "")}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function buildTrainBotJobsTable(items) {
+  if (!items.length) return `<div class="empty-state">No training jobs yet.</div>`;
+  return `
+    <table class="admin-table">
+      <thead><tr><th>ID</th><th>Type</th><th>Status</th><th>Started</th><th>Finished</th><th>Result</th><th>Error</th></tr></thead>
+      <tbody>
+      ${items.map((j) => `
+        <tr>
+          <td>${escapeHtml(j.id)}</td>
+          <td>${escapeHtml(j.job_type)}</td>
+          <td>${escapeHtml(j.status)}</td>
+          <td>${escapeHtml(j.started_at || "—")}</td>
+          <td>${escapeHtml(j.finished_at || "—")}</td>
+          <td><pre>${escapeHtml(JSON.stringify(j.result || {}, null, 2))}</pre></td>
+          <td>${escapeHtml(j.error_text || "—")}</td>
+        </tr>
+      `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function buildTrainBotAuditTable(items) {
+  if (!items.length) return `<div class="empty-state">No audit entries yet.</div>`;
+  return `
+    <table class="admin-table">
+      <thead><tr><th>ID</th><th>Action</th><th>Entity</th><th>Entity ID</th><th>Metadata</th><th>Created</th></tr></thead>
+      <tbody>
+      ${items.map((a) => `
+        <tr>
+          <td>${escapeHtml(a.id)}</td>
+          <td>${escapeHtml(a.action)}</td>
+          <td>${escapeHtml(a.entity_type)}</td>
+          <td>${escapeHtml(a.entity_id || "—")}</td>
+          <td><pre>${escapeHtml(JSON.stringify(a.metadata || {}, null, 2))}</pre></td>
+          <td>${escapeHtml(a.created_at || "")}</td>
+        </tr>
+      `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderTrainBotHub() {
+  if (trainBotQueueTable) trainBotQueueTable.innerHTML = buildTrainBotQueueTable(state.trainBotQueue || []);
+  if (trainBotJobsTable) trainBotJobsTable.innerHTML = buildTrainBotJobsTable(state.trainBotJobs || []);
+  if (trainBotAuditTable) trainBotAuditTable.innerHTML = buildTrainBotAuditTable(state.trainBotAudit || []);
+}
+
+async function loadTrainBotHub() {
+  showLoading(trainBotQueueTable, "Loading train-bot queue...");
+  showLoading(trainBotJobsTable, "Loading training jobs...");
+  showLoading(trainBotAuditTable, "Loading audit logs...");
+  const [queueRes, jobsRes, auditRes] = await Promise.all([
+    fetch("/api/admin/train-bot/queue?limit=200"),
+    fetch("/api/admin/train-bot/jobs?limit=50"),
+    fetch("/api/admin/train-bot/audit?limit=100"),
+  ]);
+  const [queueData, jobsData, auditData] = await Promise.all([queueRes.json(), jobsRes.json(), auditRes.json()]);
+  state.trainBotQueue = queueData.items || [];
+  state.trainBotJobs = jobsData.items || [];
+  state.trainBotAudit = auditData.items || [];
+  if (state.trainBotSelected) {
+    state.trainBotSelected = state.trainBotQueue.find(
+      (x) => Number(x.id) === Number(state.trainBotSelected.id) && x.queue_type === state.trainBotSelected.queue_type
+    ) || null;
+  }
+  renderTrainBotHub();
+}
+
+function selectedTrainBotItem() {
+  if (!state.trainBotSelected) {
+    alert("Select a queue item first.");
+    return null;
+  }
+  return state.trainBotSelected;
+}
+
+async function runTrainBotAction(path, payload = {}) {
+  const options = { method: "POST" };
+  if (payload !== null) {
+    options.headers = { "Content-Type": "application/json" };
+    options.body = JSON.stringify(payload);
+  }
+  const res = await fetch(path, options);
+  const data = await res.json();
+  if (!res.ok || data.ok === false) {
+    alert(data.detail || data.message || "Train Bot action failed.");
+    return null;
+  }
+  await loadTrainBotHub();
+  await refreshAll();
+  return data;
+}
+
+function selectTrainBotItem(queueType, id) {
+  const item = (state.trainBotQueue || []).find((x) => x.queue_type === queueType && Number(x.id) === Number(id));
+  state.trainBotSelected = item || null;
+  renderTrainBotHub();
+}
+
+function chatHistoryFilterQuery() {
+  const params = new URLSearchParams();
+  if (chatHistoryDateFrom?.value) params.set("date_from", chatHistoryDateFrom.value);
+  if (chatHistoryDateTo?.value) params.set("date_to", chatHistoryDateTo.value);
+  if ((chatHistoryCategory?.value || "").trim()) params.set("category", chatHistoryCategory.value.trim());
+  if ((chatHistoryResponseMode?.value || "").trim()) params.set("response_mode", chatHistoryResponseMode.value.trim());
+  if ((chatHistoryFeedbackStatus?.value || "").trim()) params.set("feedback_status", chatHistoryFeedbackStatus.value.trim());
+  params.set("limit", "200");
+  return params.toString();
+}
+
+function buildChatHistorySessionsTable(items) {
+  if (!items.length) return `<div class="empty-state">No chat sessions found for selected filters.</div>`;
+  return `
+    <table class="admin-table">
+      <thead><tr><th>Open</th><th>ID</th><th>Session Key</th><th>Status</th><th>Started</th><th>Messages</th><th>Answers</th><th>Feedback</th><th>Unsatisfied</th><th>Wrong Open</th><th>Last Message</th></tr></thead>
+      <tbody>
+      ${items.map((s) => `
+        <tr>
+          <td><button class="action-btn" onclick="openChatHistorySession(${Number(s.id)})">View</button></td>
+          <td>${escapeHtml(s.id)}</td>
+          <td>${escapeHtml(s.session_key || "")}</td>
+          <td>${escapeHtml(s.status || "")}</td>
+          <td>${escapeHtml(s.started_at || "")}</td>
+          <td>${escapeHtml(s.message_count || 0)}</td>
+          <td>${escapeHtml(s.answer_count || 0)}</td>
+          <td>${escapeHtml(s.feedback_count || 0)}</td>
+          <td>${escapeHtml(s.unsatisfied_count || 0)}</td>
+          <td>${escapeHtml(s.wrong_answer_open_count || 0)}</td>
+          <td>${escapeHtml(s.last_message_at || "—")}</td>
+        </tr>
+      `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function buildChatTranscript(detail) {
+  if (!detail || !detail.transcript || !detail.transcript.length) {
+    return `<div class="empty-state">No transcript available for this session.</div>`;
+  }
+  return `
+    <table class="admin-table">
+      <thead><tr><th>Message ID</th><th>Time</th><th>User Query</th><th>Bot Answer</th><th>Response Mode</th><th>Category</th><th>Confidence</th><th>Citations / Evidence</th><th>Feedback / Wrong Flags</th></tr></thead>
+      <tbody>
+      ${detail.transcript.map((m) => `
+        <tr>
+          <td>${escapeHtml(m.id)}</td>
+          <td>${escapeHtml(m.created_at || "")}</td>
+          <td class="question-cell">${escapeHtml(m.question_text || "—")}</td>
+          <td class="question-cell">${escapeHtml(m.answer_text || "—")}</td>
+          <td>${escapeHtml(m.answer_mode || "—")}</td>
+          <td>${escapeHtml(m.category_code || "—")}</td>
+          <td>${escapeHtml(m.confidence ?? "—")}</td>
+          <td>
+            <div><strong>Citations:</strong><pre>${escapeHtml(JSON.stringify(m.citations || [], null, 2))}</pre></div>
+            <div><strong>Evidence:</strong><pre>${escapeHtml(JSON.stringify(m.evidence || [], null, 2))}</pre></div>
+          </td>
+          <td>
+            <div><strong>Feedback:</strong><pre>${escapeHtml(JSON.stringify(m.feedback || [], null, 2))}</pre></div>
+            <div><strong>Wrong reports:</strong><pre>${escapeHtml(JSON.stringify(m.wrong_answer_reports || [], null, 2))}</pre></div>
+          </td>
+        </tr>
+      `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderChatHistory() {
+  if (chatHistorySessionsTable) {
+    chatHistorySessionsTable.innerHTML = buildChatHistorySessionsTable(state.chatHistorySessions || []);
+  }
+  if (chatHistoryTranscript) {
+    chatHistoryTranscript.innerHTML = buildChatTranscript(state.chatHistoryDetail);
+  }
+  if (chatHistoryAdminNote) {
+    chatHistoryAdminNote.value = state.chatHistoryDetail?.session?.admin_note || "";
+  }
+}
+
+async function loadChatHistorySessions() {
+  showLoading(chatHistorySessionsTable, "Loading chat sessions...");
+  const query = chatHistoryFilterQuery();
+  const res = await fetch(`/api/admin/chat-history/sessions?${query}`);
+  const data = await res.json();
+  state.chatHistorySessions = data.items || [];
+  renderChatHistory();
+}
+
+async function openChatHistorySession(sessionId) {
+  showLoading(chatHistoryTranscript, "Loading transcript...");
+  state.chatHistorySelectedSessionId = Number(sessionId);
+  const res = await fetch(`/api/admin/chat-history/sessions/${state.chatHistorySelectedSessionId}`);
+  const data = await res.json();
+  if (!res.ok) {
+    alert(data.detail || "Failed to load session detail.");
+    return;
+  }
+  state.chatHistoryDetail = data.item || null;
+  renderChatHistory();
+}
+
+async function saveChatHistoryNote() {
+  if (!state.chatHistorySelectedSessionId) {
+    alert("Open a session first.");
+    return;
+  }
+  const note = (chatHistoryAdminNote?.value || "").trim();
+  const res = await fetch(`/api/admin/chat-history/sessions/${state.chatHistorySelectedSessionId}/note`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ admin_note: note }),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    alert(data.detail || "Failed to save note.");
+    return;
+  }
+  await loadChatHistorySessions();
+  await openChatHistorySession(state.chatHistorySelectedSessionId);
+}
+
+function exportChatHistory() {
+  const query = chatHistoryFilterQuery();
+  window.open(`/api/admin/export/chat-history?${query}`, "_blank");
+}
+
+function buildQnaPairsTable(items) {
+  if (!items.length) return `<div class="empty-state">No Q&A pairs found.</div>`;
+  return `
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>ID</th><th>Category</th><th>Question</th><th>Answer</th><th>Approval</th><th>Status</th><th>Flags</th><th>Priority</th><th>Updated</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${items.map((q) => `
+          <tr>
+            <td>${escapeHtml(q.id)}</td>
+            <td>${escapeHtml(q.category_code || "—")}</td>
+            <td>${escapeHtml(q.question || "")}</td>
+            <td>${escapeHtml((q.answer || "").slice(0, 120))}</td>
+            <td>${escapeHtml(q.approval_status || "approved")}</td>
+            <td>${escapeHtml(q.status || "active")}</td>
+            <td>${q.is_exact_eligible ? "E" : "—"} / ${q.is_semantic_eligible ? "S" : "—"}</td>
+            <td>${escapeHtml(q.priority || 0)}</td>
+            <td>${escapeHtml(q.updated_at || "")}</td>
+            <td>
+              <button class="action-btn" onclick="editQnaPair(${q.id})">Edit</button>
+              <button class="action-btn" onclick="archiveQnaPair(${q.id})">Archive</button>
+              <button class="action-btn" onclick="deleteQnaPair(${q.id})">Delete</button>
+            </td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderQnaPairs() {
+  if (!qnaPairsTable) return;
+  qnaPairsTable.innerHTML = buildQnaPairsTable(state.qnaPairs || []);
+}
+
+async function loadQnaPairs() {
+  showLoading(qnaPairsTable, "Loading Q&A pairs...");
+  const search = encodeURIComponent((qnaSearchInput?.value || "").trim());
+  const status = encodeURIComponent(qnaStatusFilter?.value || "active");
+  const approval = encodeURIComponent(qnaApprovalFilter?.value || "approved");
+  const res = await fetch(`/api/admin/qna-pairs?search=${search}&status=${status}&approval_status=${approval}`);
+  const data = await res.json();
+  state.qnaPairs = data.items || [];
+  renderQnaPairs();
+}
+
+function clearQnaForm() {
+  if (qnaEditId) qnaEditId.value = "";
+  if (qnaQuestionInput) qnaQuestionInput.value = "";
+  if (qnaAnswerInput) qnaAnswerInput.value = "";
+  if (qnaCategoryInput) qnaCategoryInput.value = "";
+  if (qnaSourceNoteInput) qnaSourceNoteInput.value = "";
+  if (qnaPriorityInput) qnaPriorityInput.value = "0";
+  if (qnaApprovalInput) qnaApprovalInput.value = "approved";
+  if (qnaExactFlag) qnaExactFlag.checked = true;
+  if (qnaSemanticFlag) qnaSemanticFlag.checked = true;
+}
+
+function editQnaPair(qnaId) {
+  const item = (state.qnaPairs || []).find((q) => Number(q.id) === Number(qnaId));
+  if (!item) return;
+  qnaEditId.value = item.id;
+  qnaQuestionInput.value = item.question || "";
+  qnaAnswerInput.value = item.answer || "";
+  qnaCategoryInput.value = item.category_code || "";
+  qnaSourceNoteInput.value = item.source_note || "";
+  qnaPriorityInput.value = item.priority || 0;
+  qnaApprovalInput.value = item.approval_status || "approved";
+  qnaExactFlag.checked = !!item.is_exact_eligible;
+  qnaSemanticFlag.checked = !!item.is_semantic_eligible;
+}
+
+async function saveQnaPair() {
+  const editId = Number(qnaEditId?.value || 0);
+  const payload = {
+    question: (qnaQuestionInput?.value || "").trim(),
+    answer: (qnaAnswerInput?.value || "").trim(),
+    category_code: (qnaCategoryInput?.value || "").trim() || null,
+    source_note: (qnaSourceNoteInput?.value || "").trim() || null,
+    priority: Number(qnaPriorityInput?.value || 0) || 0,
+    approval_status: qnaApprovalInput?.value || "approved",
+    is_exact_eligible: !!qnaExactFlag?.checked,
+    is_semantic_eligible: !!qnaSemanticFlag?.checked,
+  };
+
+  if (!payload.question || !payload.answer) {
+    alert("Question and answer are required.");
+    return;
+  }
+
+  const url = editId ? `/api/admin/qna-pairs/${editId}` : "/api/admin/qna-pairs";
+  const method = editId ? "PUT" : "POST";
+  const res = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok || (data.ok === false)) {
+    alert(data.detail || data.message || "Failed to save Q&A pair.");
+    return;
+  }
+
+  if (data.duplicate_candidates && data.duplicate_candidates.length) {
+    console.warn("Potential duplicates:", data.duplicate_candidates);
+  }
+
+  clearQnaForm();
+  await loadQnaPairs();
+}
+
+async function archiveQnaPair(qnaId) {
+  const res = await fetch(`/api/admin/qna-pairs/${qnaId}/archive`, { method: "POST" });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    alert(data.detail || "Failed to archive Q&A pair.");
+    return;
+  }
+  await loadQnaPairs();
+}
+
+async function deleteQnaPair(qnaId) {
+  const res = await fetch(`/api/admin/qna-pairs/${qnaId}`, { method: "DELETE" });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    alert(data.detail || "Failed to delete Q&A pair.");
+    return;
+  }
+  await loadQnaPairs();
+}
+
+function buildCategoriesTable(items) {
+  if (!items.length) return `<div class="empty-state">No categories found.</div>`;
+  return `
+    <table class="admin-table">
+      <thead><tr><th>ID</th><th>Code</th><th>Name</th><th>Active</th><th>Order</th><th>Synonyms</th><th>Routing hint</th><th>Actions</th></tr></thead>
+      <tbody>
+        ${items.map((c) => `
+          <tr>
+            <td>${escapeHtml(c.id)}</td>
+            <td>${escapeHtml(c.code)}</td>
+            <td>${escapeHtml(c.name)}</td>
+            <td>${c.is_active ? "yes" : "no"}</td>
+            <td>${escapeHtml(c.display_order || 0)}</td>
+            <td>${escapeHtml(c.synonyms_count || 0)}</td>
+            <td>${escapeHtml(c.routing_hint || "—")}</td>
+            <td>
+              <button class="action-btn" onclick="editCategory(${c.id})">Edit</button>
+              <button class="action-btn" onclick="archiveCategory(${c.id})">Archive</button>
+              <button class="action-btn" onclick="loadCategorySynonyms(${c.id})">Synonyms</button>
+            </td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderCategories() {
+  if (categoriesTable) categoriesTable.innerHTML = buildCategoriesTable(state.categories || []);
+}
+
+function renderCategoryStats(statsItems) {
+  if (!categoriesStatsTable) return;
+  if (!statsItems || !statsItems.length) {
+    categoriesStatsTable.innerHTML = `<div class="empty-state">No category stats yet.</div>`;
+    return;
+  }
+  categoriesStatsTable.innerHTML = `
+    <table class="admin-table">
+      <thead><tr><th>Code</th><th>Q&A total</th><th>Q&A active</th><th>Q&A archived</th><th>Unresolved</th></tr></thead>
+      <tbody>
+        ${statsItems.map((s) => `
+          <tr>
+            <td>${escapeHtml(s.code || "")}</td>
+            <td>${escapeHtml(s.qna_pairs_total || 0)}</td>
+            <td>${escapeHtml(s.qna_active || 0)}</td>
+            <td>${escapeHtml(s.qna_archived || 0)}</td>
+            <td>${escapeHtml(s.unresolved_total || 0)}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderCategorySynonyms() {
+  if (!categorySynonymsTable) return;
+  if (!state.categorySynonyms.length) {
+    categorySynonymsTable.innerHTML = `<div class="empty-state">No synonyms for selected category.</div>`;
+    return;
+  }
+  categorySynonymsTable.innerHTML = `
+    <table class="admin-table">
+      <thead><tr><th>Synonym</th><th>Normalized</th></tr></thead>
+      <tbody>${state.categorySynonyms.map((s) => `
+        <tr><td>${escapeHtml(s.synonym)}</td><td>${escapeHtml(s.normalized_synonym)}</td></tr>
+      `).join("")}</tbody>
+    </table>
+  `;
+}
+
+async function loadCategories() {
+  showLoading(categoriesTable, "Loading categories...");
+  showLoading(categoriesStatsTable, "Loading category stats...");
+  const res = await fetch("/api/admin/categories?include_inactive=true");
+  const data = await res.json();
+  state.categories = data.items || [];
+  renderCategories();
+
+  const statsRes = await fetch("/api/admin/categories/stats");
+  const statsData = await statsRes.json();
+  renderCategoryStats(statsData.items || []);
+}
+
+function clearCategoryForm() {
+  if (categoryEditId) categoryEditId.value = "";
+  if (categoryCodeInput) categoryCodeInput.value = "";
+  if (categoryNameInput) categoryNameInput.value = "";
+  if (categoryOrderInput) categoryOrderInput.value = "0";
+  if (categoryActiveInput) categoryActiveInput.checked = true;
+  if (categoryDescriptionInput) categoryDescriptionInput.value = "";
+  if (categoryRoutingHintInput) categoryRoutingHintInput.value = "";
+  if (categoryPromptHintInput) categoryPromptHintInput.value = "";
+  if (categoryScopeInput) categoryScopeInput.value = "{}";
+  if (categorySynonymInput) categorySynonymInput.value = "";
+  state.categorySynonyms = [];
+  renderCategorySynonyms();
+}
+
+function editCategory(categoryId) {
+  const item = (state.categories || []).find((c) => Number(c.id) === Number(categoryId));
+  if (!item) return;
+  categoryEditId.value = item.id;
+  categoryCodeInput.value = item.code || "";
+  categoryNameInput.value = item.name || "";
+  categoryOrderInput.value = item.display_order || 0;
+  categoryActiveInput.checked = !!item.is_active;
+  categoryDescriptionInput.value = item.description || "";
+  categoryRoutingHintInput.value = item.routing_hint || "";
+  categoryPromptHintInput.value = item.prompt_hint || "";
+  categoryScopeInput.value = JSON.stringify(item.retrieval_scope || {}, null, 2);
+}
+
+async function saveCategory() {
+  const editId = Number(categoryEditId?.value || 0);
+  let scope = {};
+  try {
+    scope = JSON.parse(categoryScopeInput?.value || "{}");
+  } catch (err) {
+    alert("Invalid retrieval scope JSON.");
+    return;
+  }
+
+  const payload = {
+    code: (categoryCodeInput?.value || "").trim(),
+    name: (categoryNameInput?.value || "").trim(),
+    description: (categoryDescriptionInput?.value || "").trim() || null,
+    display_order: Number(categoryOrderInput?.value || 0) || 0,
+    is_active: !!categoryActiveInput?.checked,
+    routing_hint: (categoryRoutingHintInput?.value || "").trim() || null,
+    prompt_hint: (categoryPromptHintInput?.value || "").trim() || null,
+    retrieval_scope: scope,
+  };
+
+  if (!payload.code || !payload.name) {
+    alert("Category code and name are required.");
+    return;
+  }
+
+  const url = editId ? `/api/admin/categories/${editId}` : "/api/admin/categories";
+  const method = editId ? "PUT" : "POST";
+  const res = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    alert(data.detail || "Failed to save category.");
+    return;
+  }
+  await loadCategories();
+  clearCategoryForm();
+}
+
+async function archiveCategory(categoryId) {
+  const res = await fetch(`/api/admin/categories/${categoryId}/archive`, { method: "POST" });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    alert(data.detail || "Failed to archive category.");
+    return;
+  }
+  await loadCategories();
+}
+
+async function loadCategorySynonyms(categoryId) {
+  categoryEditId.value = categoryId;
+  const res = await fetch(`/api/admin/categories/${categoryId}/synonyms`);
+  const data = await res.json();
+  state.categorySynonyms = data.items || [];
+  renderCategorySynonyms();
+}
+
+async function addCategorySynonym() {
+  const categoryId = Number(categoryEditId?.value || 0);
+  if (!categoryId) {
+    alert("Select a category first.");
+    return;
+  }
+  const synonym = (categorySynonymInput?.value || "").trim();
+  if (!synonym) {
+    alert("Enter a synonym.");
+    return;
+  }
+  const res = await fetch(`/api/admin/categories/${categoryId}/synonyms`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ synonym }),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    alert(data.detail || "Failed to add synonym.");
+    return;
+  }
+  categorySynonymInput.value = "";
+  await loadCategorySynonyms(categoryId);
+  await loadCategories();
+}
+
+function buildDecisionTreesTable(items) {
+  if (!items.length) return `<div class="empty-state">No decision trees found.</div>`;
+  return `
+    <table class="admin-table">
+      <thead><tr><th>ID</th><th>Name</th><th>Key</th><th>Category</th><th>Active</th><th>Nodes</th><th>Edges</th><th>Actions</th></tr></thead>
+      <tbody>
+        ${items.map((t) => `
+          <tr>
+            <td>${escapeHtml(t.id)}</td>
+            <td>${escapeHtml(t.name)}</td>
+            <td>${escapeHtml(t.tree_key)}</td>
+            <td>${escapeHtml(t.category_code || "—")}</td>
+            <td>${t.is_active ? "yes" : "no"}</td>
+            <td>${escapeHtml(t.nodes_count || 0)}</td>
+            <td>${escapeHtml(t.edges_count || 0)}</td>
+            <td>
+              <button class="action-btn" onclick="editDecisionTree(${t.id})">Edit</button>
+              <button class="action-btn" onclick="deleteDecisionTree(${t.id})">Delete</button>
+            </td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderDecisionTrees() {
+  if (decisionTreesTable) decisionTreesTable.innerHTML = buildDecisionTreesTable(state.decisionTrees || []);
+}
+
+async function loadDecisionTrees() {
+  showLoading(decisionTreesTable, "Loading decision trees...");
+  const res = await fetch("/api/admin/decision-trees?include_inactive=true");
+  const data = await res.json();
+  state.decisionTrees = data.items || [];
+  renderDecisionTrees();
+}
+
+function clearDecisionTreeForm() {
+  if (treeEditId) treeEditId.value = "";
+  if (treeNameInput) treeNameInput.value = "";
+  if (treeKeyInput) treeKeyInput.value = "";
+  if (treeCategoryInput) treeCategoryInput.value = "";
+  if (treeActiveInput) treeActiveInput.checked = true;
+  if (treeVersionInput) treeVersionInput.value = "1.0.0";
+  if (treeStatusInput) treeStatusInput.value = "draft";
+  if (treeTriggersInput) treeTriggersInput.value = "";
+  if (treeDescriptionInput) treeDescriptionInput.value = "";
+  if (treeNodesJsonInput) treeNodesJsonInput.value = "[]";
+  if (treeEdgesJsonInput) treeEdgesJsonInput.value = "[]";
+}
+
+async function editDecisionTree(treeId) {
+  const res = await fetch(`/api/admin/decision-trees/${treeId}`);
+  const data = await res.json();
+  if (!res.ok) {
+    alert(data.detail || "Failed to load tree.");
+    return;
+  }
+  const item = data.item || {};
+  treeEditId.value = item.id || "";
+  treeNameInput.value = item.name || "";
+  treeKeyInput.value = item.tree_key || "";
+  treeCategoryInput.value = item.category_code || "";
+  treeActiveInput.checked = !!item.is_active;
+  treeVersionInput.value = item.version || "1.0.0";
+  treeStatusInput.value = item.status || "draft";
+  treeTriggersInput.value = (item.trigger_phrases || []).join(", ");
+  treeDescriptionInput.value = item.description || "";
+  treeNodesJsonInput.value = JSON.stringify(item.nodes || [], null, 2);
+  treeEdgesJsonInput.value = JSON.stringify(item.edges || [], null, 2);
+}
+
+async function saveDecisionTree() {
+  let nodes = [];
+  let edges = [];
+  try {
+    nodes = JSON.parse(treeNodesJsonInput?.value || "[]");
+    edges = JSON.parse(treeEdgesJsonInput?.value || "[]");
+  } catch (err) {
+    alert("Nodes/Edges JSON is invalid.");
+    return;
+  }
+  const payload = {
+    id: Number(treeEditId?.value || 0) || null,
+    name: (treeNameInput?.value || "").trim(),
+    tree_key: (treeKeyInput?.value || "").trim() || null,
+    category_code: (treeCategoryInput?.value || "").trim() || null,
+    is_active: !!treeActiveInput?.checked,
+    version: (treeVersionInput?.value || "1.0.0").trim(),
+    status: (treeStatusInput?.value || "draft").trim(),
+    trigger_phrases: (treeTriggersInput?.value || "").split(",").map((v) => v.trim()).filter(Boolean),
+    description: (treeDescriptionInput?.value || "").trim() || null,
+    nodes,
+    edges,
+  };
+  if (!payload.name) {
+    alert("Tree name is required.");
+    return;
+  }
+  const res = await fetch("/api/admin/decision-trees", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    alert(data.detail || "Failed to save tree.");
+    return;
+  }
+  await loadDecisionTrees();
+}
+
+async function deleteDecisionTree(treeId) {
+  const res = await fetch(`/api/admin/decision-trees/${treeId}`, { method: "DELETE" });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    alert(data.detail || "Failed to delete tree.");
+    return;
+  }
+  await loadDecisionTrees();
+}
+
+function buildSourcesTable(items) {
+  if (!items.length) {
+    return `<div class="empty-state">No data sources configured.</div>`;
+  }
+
+  return `
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>ID</th><th>Name</th><th>Type</th><th>Format</th><th>Status</th>
+          <th>Docs</th><th>Chunks</th><th>Last Ingestion</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+      ${items.map((item) => `
+        <tr>
+          <td>${escapeHtml(item.id)}</td>
+          <td>${escapeHtml(item.name)}</td>
+          <td>${escapeHtml(item.source_type)}</td>
+          <td>${escapeHtml(item.source_format || "unknown")}</td>
+          <td>${escapeHtml(item.status)}</td>
+          <td>${escapeHtml(item.document_count || 0)}</td>
+          <td>${escapeHtml(item.chunk_count || 0)}</td>
+          <td>${escapeHtml(item.last_ingestion_status || "never")} ${escapeHtml(item.last_ingestion_at || "")}</td>
+          <td>
+            <button class="action-btn" onclick="viewSourceDocuments(${item.id})">Docs</button>
+            <button class="action-btn" onclick="toggleSourceStatus(${item.id}, '${item.status === "enabled" ? "disabled" : "enabled"}')">${item.status === "enabled" ? "Disable" : "Enable"}</button>
+            <button class="action-btn" onclick="triggerSourceReingest(${item.id})">Reingest</button>
+          </td>
+        </tr>
+      `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderSources() {
+  if (!sourcesTable) return;
+  sourcesTable.innerHTML = buildSourcesTable(state.dataSources || []);
+}
+
+function renderSourceDocuments() {
+  if (!sourceDocumentsTable) return;
+  if (!state.sourceDocuments.length) {
+    sourceDocumentsTable.innerHTML = `<div class="empty-state">Select a source to view documents.</div>`;
+    return;
+  }
+
+  sourceDocumentsTable.innerHTML = `
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>File</th><th>Version</th><th>Hash</th><th>Chunks</th><th>Status</th><th>Ingested At</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${state.sourceDocuments.map((d) => `
+          <tr>
+            <td>${escapeHtml(d.file_name)}</td>
+            <td>${escapeHtml(d.version || "—")}</td>
+            <td>${escapeHtml(d.content_hash || "—")}</td>
+            <td>${escapeHtml(d.chunk_count || 0)}</td>
+            <td>${escapeHtml(d.status || "active")}</td>
+            <td>${escapeHtml(d.ingested_at || "—")}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+async function loadDataSources() {
+  showLoading(sourcesTable, "Loading data sources...");
+  const res = await fetch("/api/admin/data-sources");
+  const data = await res.json();
+  state.dataSources = data.items || [];
+  renderSources();
+}
+
+async function viewSourceDocuments(sourceId) {
+  state.activeSourceId = sourceId;
+  const res = await fetch(`/api/admin/data-sources/${sourceId}/documents`);
+  const data = await res.json();
+  state.sourceDocuments = data.items || [];
+  renderSourceDocuments();
+}
+
+async function addSource() {
+  const payload = {
+    name: (sourceNameInput?.value || "").trim(),
+    source_type: (sourceTypeInput?.value || "manual_upload").trim(),
+    source_format: (sourceFormatInput?.value || "manual").trim().toLowerCase(),
+    uri: (sourceUriInput?.value || "").trim() || null,
+  };
+
+  if (!payload.name) {
+    alert("Source name is required.");
+    return;
+  }
+
+  const res = await fetch("/api/admin/data-sources", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    alert(data.detail || data.message || "Failed to create source.");
+    return;
+  }
+
+  sourceNameInput.value = "";
+  sourceUriInput.value = "";
+  sourceFormatInput.value = "";
+  await loadDataSources();
+}
+
+async function toggleSourceStatus(sourceId, status) {
+  const res = await fetch(`/api/admin/data-sources/${sourceId}/status`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    alert(data.detail || data.message || "Failed to update source status.");
+    return;
+  }
+
+  await loadDataSources();
+}
+
+async function triggerSourceReingest(sourceId) {
+  const res = await fetch(`/api/admin/data-sources/${sourceId}/reingest`, { method: "POST" });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    alert(data.detail || data.message || "Failed to queue reingest.");
+    return;
+  }
+  await loadDataSources();
+}
+
+function renderJsonPreview(previewData) {
+  state.jsonPreview = previewData || null;
+  if (!jsonMappingFields || !jsonPreviewTable || !jsonErrorsBox) return;
+
+  if (!previewData) {
+    jsonMappingFields.innerHTML = "";
+    jsonPreviewTable.innerHTML = "";
+    jsonErrorsBox.innerHTML = "";
+    return;
+  }
+
+  const fields = previewData.mapping_fields || [];
+  jsonMappingFields.innerHTML = `
+    <div><strong>Target:</strong> ${escapeHtml(previewData.target || "")}</div>
+    <div><strong>Record count:</strong> ${escapeHtml(previewData.record_count || 0)}</div>
+    <div><strong>Required fields:</strong> ${escapeHtml(fields.join(", ") || "—")}</div>
+  `;
+
+  const rows = previewData.preview || [];
+  if (!rows.length) {
+    jsonPreviewTable.innerHTML = `<div class="empty-state">No records to preview.</div>`;
+  } else {
+    jsonPreviewTable.innerHTML = `
+      <table class="admin-table">
+        <thead><tr><th>Row</th><th>Mapped Fields</th><th>Extra Fields</th></tr></thead>
+        <tbody>
+          ${rows.map((r) => `
+            <tr>
+              <td>${escapeHtml(r.row)}</td>
+              <td><pre>${escapeHtml(JSON.stringify(r.mapped || {}, null, 2))}</pre></td>
+              <td>${escapeHtml((r.extra_fields || []).join(", ") || "—")}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  const errors = previewData.errors || [];
+  if (!errors.length) {
+    jsonErrorsBox.innerHTML = `<div class="empty-state">No validation errors.</div>`;
+  } else {
+    jsonErrorsBox.innerHTML = `
+      <div class="empty-state" style="color:#b91c1c; text-align:left;">
+        <strong>Validation errors (${errors.length}):</strong>
+        <ul>${errors.map((e) => `<li>${escapeHtml(e)}</li>`).join("")}</ul>
+      </div>
+    `;
+  }
+}
+
+async function previewJsonConvert() {
+  const target = (jsonConvertTarget?.value || "").trim();
+  const jsonText = (jsonConvertInput?.value || "").trim();
+  if (!target || !jsonText) {
+    alert("Please select target and provide JSON.");
+    return;
+  }
+
+  const res = await fetch("/api/admin/json-convert/preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ target, json_text: jsonText }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    alert(data.detail || "Preview failed.");
+    return;
+  }
+  renderJsonPreview(data);
+}
+
+async function importJsonConvert() {
+  const target = (jsonConvertTarget?.value || "").trim();
+  const jsonText = (jsonConvertInput?.value || "").trim();
+  if (!target || !jsonText) {
+    alert("Please select target and provide JSON.");
+    return;
+  }
+
+  const res = await fetch("/api/admin/json-convert/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ target, json_text: jsonText }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    alert(data.detail || "Import failed.");
+    return;
+  }
+
+  const msg = `Imported: ${data.created_count || 0}, Errors: ${data.error_count || 0}, Audit Log ID: ${data.audit_log_id || "n/a"}`;
+  alert(msg);
+  if (data.errors && data.errors.length) {
+    renderJsonPreview({
+      target,
+      record_count: 0,
+      mapping_fields: state.jsonPreview?.mapping_fields || [],
+      preview: state.jsonPreview?.preview || [],
+      errors: data.errors,
+    });
+  }
+  await refreshAll();
 }
 
 async function saveExpertAnswer() {
@@ -431,12 +1498,148 @@ async function saveExpertAnswer() {
   }
 }
 
+async function trainBotPromoteExpert() {
+  const item = selectedTrainBotItem();
+  if (!item || !["unresolved", "wrong_answer"].includes(item.queue_type)) {
+    alert("Select an unresolved or wrong-answer queue item.");
+    return;
+  }
+  const category = (prompt("Category code for expert answer:", item.category || "patent") || "").trim();
+  const expertAnswer = (prompt("Corrected expert answer:") || "").trim();
+  if (!category || !expertAnswer) {
+    alert("Category and expert answer are required.");
+    return;
+  }
+  if (item.queue_type === "unresolved") {
+    await runTrainBotAction("/api/admin/train-bot/actions/promote-expert", {
+      unresolved_query_id: Number(item.id),
+      category,
+      expert_answer: expertAnswer,
+      source_note: "train_bot_promote_expert",
+    });
+    return;
+  }
+
+  await runTrainBotAction(`/api/admin/wrong-answer-reports/${Number(item.id)}/convert/expert`, {
+    category,
+    answer_text: expertAnswer,
+    source_note: "train_bot_wrong_report_to_expert",
+  });
+}
+
+async function trainBotPromoteQna() {
+  const item = selectedTrainBotItem();
+  if (!item) return;
+  const answer = (prompt("Answer to store in Q&A pair:", item.answer_text || "") || "").trim();
+  if (!answer) {
+    alert("Answer is required.");
+    return;
+  }
+  const categoryCode = (prompt("Category code (optional):", item.category || "") || "").trim();
+  const sourceItemType = item.queue_type === "unresolved" ? "unresolved_queries" : "wrong_answer_reports";
+  await runTrainBotAction("/api/admin/train-bot/actions/promote-qna", {
+    source_item_type: sourceItemType,
+    source_item_id: Number(item.id),
+    question: item.question || "",
+    answer,
+    category_code: categoryCode || null,
+    source_note: "train_bot_promote_qna",
+  });
+}
+
+async function trainBotResolveWrongReport() {
+  const item = selectedTrainBotItem();
+  if (!item || item.queue_type !== "wrong_answer") {
+    alert("Select a wrong-answer queue item.");
+    return;
+  }
+  const adminAction = (prompt("Admin action summary:", "reviewed_and_corrected") || "").trim();
+  const actionNotes = (prompt("Action notes:", "") || "").trim();
+  if (!adminAction) {
+    alert("Admin action is required.");
+    return;
+  }
+  await runTrainBotAction("/api/admin/train-bot/actions/resolve-wrong-answer", {
+    report_id: Number(item.id),
+    admin_action: adminAction,
+    action_notes: actionNotes || null,
+  });
+}
+
+async function trainBotClassifyWrongReport() {
+  const item = selectedTrainBotItem();
+  if (!item || item.queue_type !== "wrong_answer") {
+    alert("Select a wrong-answer queue item.");
+    return;
+  }
+  const status = (prompt("Set status (open/in_review/resolved):", "in_review") || "").trim() || "in_review";
+  const severity = (prompt("Severity (low/medium/high):", "medium") || "").trim() || "medium";
+  const reasonCode = (prompt("Reason code:", "incorrect_answer") || "").trim() || "incorrect_answer";
+  const notes = (prompt("Classification notes:", "") || "").trim();
+  await runTrainBotAction(`/api/admin/wrong-answer-reports/${Number(item.id)}/classify`, {
+    status,
+    severity,
+    reason_code: reasonCode,
+    action_notes: notes || null,
+  });
+}
+
+async function trainBotCategoryFix() {
+  const item = selectedTrainBotItem();
+  if (!item || item.queue_type !== "wrong_answer") {
+    alert("Select a wrong-answer queue item.");
+    return;
+  }
+  const category = (prompt("Fixed category code (optional):", item.category || "") || "").trim();
+  const notes = (prompt("Category-fix notes:", "") || "").trim();
+  await runTrainBotAction(`/api/admin/wrong-answer-reports/${Number(item.id)}/convert/category-fix`, {
+    category: category || null,
+    source_note: notes || null,
+  });
+}
+
+async function trainBotSourceIssue() {
+  const item = selectedTrainBotItem();
+  if (!item || item.queue_type !== "wrong_answer") {
+    alert("Select a wrong-answer queue item.");
+    return;
+  }
+  const sourceId = Number(prompt("Data source ID for source issue (optional):", String(state.activeSourceId || 0)) || 0) || null;
+  const notes = (prompt("Source-issue notes:", "") || "").trim();
+  const query = sourceId ? `?data_source_id=${sourceId}` : "";
+  await runTrainBotAction(`/api/admin/wrong-answer-reports/${Number(item.id)}/convert/source-issue${query}`, {
+    source_note: notes || null,
+  });
+}
+
+async function trainBotTriggerReindex() {
+  const sourceId = Number(prompt("Data source ID to reindex:", String(state.activeSourceId || 1)) || 0);
+  if (!sourceId) return;
+  await runTrainBotAction("/api/admin/train-bot/actions/source-reindex", { data_source_id: sourceId });
+}
+
+async function trainBotCategoryRefresh() {
+  const item = state.trainBotSelected;
+  const categoryCode = (prompt("Category code to refresh (optional):", item?.category || "") || "").trim();
+  await runTrainBotAction("/api/admin/train-bot/actions/category-refresh", {
+    category_code: categoryCode || null,
+  });
+}
+
+async function trainBotThresholdRefresh() {
+  const data = await runTrainBotAction("/api/admin/train-bot/actions/threshold-refresh", null);
+  if (data && data.ok === false) {
+    alert(data.message || "Threshold refresh skipped.");
+  }
+}
+
 async function refreshAll() {
   refreshBtn.disabled = true;
   refreshBtn.innerHTML = `<span>↻</span><span>Refreshing...</span>`;
 
   try {
-    await Promise.all([loadSummary(), loadUnresolved(), loadFeedback()]);
+    await Promise.all([loadSummary(), loadUnresolved(), loadFeedback(), loadDataSources(), loadQnaPairs(), loadCategories(), loadDecisionTrees(), loadChatHistorySessions()]);
+    await loadTrainBotHub();
   } catch (error) {
     console.error(error);
     alert("Failed to load dashboard data.");
@@ -468,6 +1671,11 @@ function setupSidebarNavigation() {
 
   menuItems.forEach((btn) => {
     btn.addEventListener("click", () => {
+      const href = btn.dataset.href;
+      if (href) {
+        window.location.href = href;
+        return;
+      }
       const section = btn.dataset.section;
       setActiveView(section);
     });
@@ -530,6 +1738,19 @@ window.exportUnresolved = exportUnresolved;
 window.exportFeedback = exportFeedback;
 window.setUnresolvedCategory = setUnresolvedCategory;
 window.setFeedbackCategory = setFeedbackCategory;
+window.viewSourceDocuments = viewSourceDocuments;
+window.toggleSourceStatus = toggleSourceStatus;
+window.triggerSourceReingest = triggerSourceReingest;
+window.editQnaPair = editQnaPair;
+window.archiveQnaPair = archiveQnaPair;
+window.deleteQnaPair = deleteQnaPair;
+window.editCategory = editCategory;
+window.archiveCategory = archiveCategory;
+window.loadCategorySynonyms = loadCategorySynonyms;
+window.editDecisionTree = editDecisionTree;
+window.deleteDecisionTree = deleteDecisionTree;
+window.selectTrainBotItem = selectTrainBotItem;
+window.openChatHistorySession = openChatHistorySession;
 
 refreshBtn.addEventListener("click", refreshAll);
 
@@ -537,6 +1758,43 @@ closeModalBtn.addEventListener("click", closeExpertModal);
 closeModalSecondaryBtn.addEventListener("click", closeExpertModal);
 modalOverlay.addEventListener("click", closeExpertModal);
 saveExpertBtn.addEventListener("click", saveExpertAnswer);
+if (addSourceBtn) addSourceBtn.addEventListener("click", addSource);
+if (previewJsonBtn) previewJsonBtn.addEventListener("click", previewJsonConvert);
+if (importJsonBtn) importJsonBtn.addEventListener("click", importJsonConvert);
+if (qnaSaveBtn) qnaSaveBtn.addEventListener("click", saveQnaPair);
+if (qnaClearBtn) qnaClearBtn.addEventListener("click", clearQnaForm);
+if (qnaRefreshBtn) qnaRefreshBtn.addEventListener("click", loadQnaPairs);
+if (qnaSearchInput) qnaSearchInput.addEventListener("input", loadQnaPairs);
+if (qnaStatusFilter) qnaStatusFilter.addEventListener("change", loadQnaPairs);
+if (qnaApprovalFilter) qnaApprovalFilter.addEventListener("change", loadQnaPairs);
+if (categoriesRefreshBtn) categoriesRefreshBtn.addEventListener("click", loadCategories);
+if (categorySaveBtn) categorySaveBtn.addEventListener("click", saveCategory);
+if (categoryClearBtn) categoryClearBtn.addEventListener("click", clearCategoryForm);
+if (categoryAddSynonymBtn) categoryAddSynonymBtn.addEventListener("click", addCategorySynonym);
+if (treesRefreshBtn) treesRefreshBtn.addEventListener("click", loadDecisionTrees);
+if (treeSaveBtn) treeSaveBtn.addEventListener("click", saveDecisionTree);
+if (treeClearBtn) treeClearBtn.addEventListener("click", clearDecisionTreeForm);
+if (trainBotRefreshBtn) trainBotRefreshBtn.addEventListener("click", loadTrainBotHub);
+if (trainBotActionPromoteExpertBtn) trainBotActionPromoteExpertBtn.addEventListener("click", trainBotPromoteExpert);
+if (trainBotActionPromoteQnaBtn) trainBotActionPromoteQnaBtn.addEventListener("click", trainBotPromoteQna);
+if (trainBotActionClassifyWrongBtn) trainBotActionClassifyWrongBtn.addEventListener("click", trainBotClassifyWrongReport);
+if (trainBotActionResolveWrongBtn) trainBotActionResolveWrongBtn.addEventListener("click", trainBotResolveWrongReport);
+if (trainBotActionCategoryFixBtn) trainBotActionCategoryFixBtn.addEventListener("click", trainBotCategoryFix);
+if (trainBotActionSourceIssueBtn) trainBotActionSourceIssueBtn.addEventListener("click", trainBotSourceIssue);
+if (trainBotActionReindexBtn) trainBotActionReindexBtn.addEventListener("click", trainBotTriggerReindex);
+if (trainBotActionCategoryRefreshBtn) trainBotActionCategoryRefreshBtn.addEventListener("click", trainBotCategoryRefresh);
+if (trainBotActionThresholdRefreshBtn) trainBotActionThresholdRefreshBtn.addEventListener("click", trainBotThresholdRefresh);
+if (chatHistoryApplyFiltersBtn) chatHistoryApplyFiltersBtn.addEventListener("click", loadChatHistorySessions);
+if (chatHistoryExportBtn) chatHistoryExportBtn.addEventListener("click", exportChatHistory);
+if (chatHistorySaveNoteBtn) chatHistorySaveNoteBtn.addEventListener("click", saveChatHistoryNote);
+if (jsonFileInput) {
+  jsonFileInput.addEventListener("change", async (event) => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    const text = await file.text();
+    if (jsonConvertInput) jsonConvertInput.value = text;
+  });
+}
 
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !expertModal.classList.contains("hidden")) {
