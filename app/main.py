@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from fastapi import FastAPI, Request, HTTPException
@@ -9,7 +10,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.core.schemas import AskRequest
 from app.core.pipeline import QAPipeline, normalize_question_text
-from app.core.config import PDF_DIR
+from app.core.config import PDF_DIR, INDEX_DIR
 from app.core.admin_store import AdminStore
 from app.core.category_utils import infer_category
 
@@ -49,6 +50,55 @@ def home(request: Request):
 @app.get("/health")
 def health():
     return {"ok": True}
+
+
+@app.get("/health/diagnostics")
+def health_diagnostics():
+    pdf_files = sorted(PDF_DIR.glob("*.pdf"))
+    chunk_path = INDEX_DIR / "chunks.jsonl"
+    index_path = INDEX_DIR / "faiss.index"
+    bm25_path = INDEX_DIR / "bm25.pkl"
+
+    chunk_count = 0
+    if chunk_path.exists():
+        with chunk_path.open("r", encoding="utf-8") as f:
+            chunk_count = sum(1 for line in f if line.strip())
+
+    sample_chunk = None
+    if chunk_path.exists():
+        with chunk_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    sample_chunk = json.loads(line)
+                    break
+
+    dashboard_totals = store.dashboard_summary().get("totals", {})
+
+    return {
+        "ok": True,
+        "documents": {
+            "pdf_count": len(pdf_files),
+            "pdf_files": [p.name for p in pdf_files],
+        },
+        "index": {
+            "faiss_index_exists": index_path.exists(),
+            "bm25_exists": bm25_path.exists(),
+            "chunks_exists": chunk_path.exists(),
+            "chunks_count": chunk_count,
+            "sample_chunk": {
+                "doc": sample_chunk.get("doc"),
+                "page": sample_chunk.get("page"),
+            }
+            if sample_chunk
+            else None,
+        },
+        "admin": {
+            "open_unresolved": dashboard_totals.get("open_unresolved", 0),
+            "feedback_total": dashboard_totals.get("feedback_total", 0),
+            "expert_answers_total": dashboard_totals.get("expert_answers_total", 0),
+        },
+    }
 
 
 @app.get("/pdf/{file_name:path}")
