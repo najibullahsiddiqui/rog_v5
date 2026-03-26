@@ -1,33 +1,17 @@
 from __future__ import annotations
 
 from fastapi import APIRouter
-from pydantic import BaseModel
 
-from app.core.admin_store import AdminStore
-from app.core.category_utils import normalize_category
+from app.schemas import FeedbackPayload
+from app.services import CategoriesService, ChatHistoryService
 from app.core.pipeline import normalize_question_text
 
 
 router = APIRouter(tags=["feedback"])
-store = AdminStore()
+chat_history_service = ChatHistoryService()
+categories_service = CategoriesService()
 
 
-# -----------------------------
-# Models
-# -----------------------------
-class FeedbackPayload(BaseModel):
-    question: str
-    normalized_question: str | None = None
-    category: str | None = None
-    answer_text: str
-    satisfied: bool
-    comment: str | None = None
-    citations: list[dict] | None = None
-
-
-# -----------------------------
-# Save Feedback API
-# -----------------------------
 @router.post("/api/feedback")
 def save_feedback(payload: FeedbackPayload):
     question = (payload.question or "").strip()
@@ -38,21 +22,20 @@ def save_feedback(payload: FeedbackPayload):
             "message": "Question is required",
         }
 
-    # normalize question server-side (IMPORTANT)
     normalized_question = normalize_question_text(
         payload.normalized_question or question
     )
 
-    category = normalize_category(payload.category) if payload.category else None
+    category = categories_service.normalize(payload.category) if payload.category else None
 
-    feedback_id = store.save_feedback(
+    feedback_id = chat_history_service.log_feedback(
         question=question,
         normalized_question=normalized_question,
         category=category,
         answer_text=payload.answer_text,
         satisfied=payload.satisfied,
         comment=payload.comment,
-        citations=payload.citations,
+        citations=[c.model_dump() for c in payload.citations] if payload.citations else None,
     )
 
     return {
