@@ -7,6 +7,8 @@ const feedbackTable = document.getElementById("feedbackTable");
 const feedbackTableOverview = document.getElementById("feedbackTableOverview");
 
 const refreshBtn = document.getElementById("refreshBtn");
+const answerModeDistribution = document.getElementById("answerModeDistribution");
+const categoryDistribution = document.getElementById("categoryDistribution");
 
 const searchInputOverviewUnresolved = document.getElementById("searchInputOverviewUnresolved");
 const searchInputOverviewFeedback = document.getElementById("searchInputOverviewFeedback");
@@ -36,6 +38,7 @@ const CATEGORY_OPTIONS = [
 const state = {
   currentView: "overview",
   summary: {},
+  dashboardSummary: {},
   unresolvedItems: [],
   feedbackItems: [],
   unresolvedCategory: "",
@@ -63,29 +66,19 @@ function prettyCategory(value) {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
-function renderKpis(totals = {}) {
+function renderKpis(summary = {}) {
+  const totals = summary.totals || {};
   const cards = [
-    {
-      icon: "?",
-      iconClass: "blue",
-      label: "Open unresolved queries",
-      title: "Open unresolved",
-      value: totals.open_unresolved || 0,
-    },
-    {
-      icon: "◉",
-      iconClass: "green",
-      label: "Feedback records",
-      title: "Feedback records",
-      value: totals.feedback_total || 0,
-    },
-    {
-      icon: "✓",
-      iconClass: "purple",
-      label: "Expert answers",
-      title: "Expert answers",
-      value: totals.expert_answers_total || 0,
-    },
+    ["Total data sources", totals.data_sources_total || 0, "📦", "blue"],
+    ["Total documents", totals.documents_total || 0, "📄", "purple"],
+    ["Total chunks", totals.chunks_total || 0, "🧩", "green"],
+    ["Q&A pairs", totals.qna_pairs_total || 0, "❓", "blue"],
+    ["Expert answers", totals.expert_answers_total || 0, "✅", "purple"],
+    ["Unresolved open", totals.unresolved_open || 0, "⚠", "blue"],
+    ["Wrong reports open", totals.wrong_answer_reports_open || 0, "🚩", "blue"],
+    ["Total chats", totals.chats_total || 0, "💬", "green"],
+    ["Active sessions", totals.active_sessions || 0, "🟢", "green"],
+    ["Recent sessions (24h)", totals.recent_sessions_24h || 0, "🕒", "purple"],
   ];
 
   kpiGrid.innerHTML = cards
@@ -93,17 +86,42 @@ function renderKpis(totals = {}) {
       (card) => `
         <div class="kpi-card">
           <div class="kpi-left">
-            <div class="kpi-icon ${card.iconClass}">${card.icon}</div>
+            <div class="kpi-icon ${card[3]}">${card[2]}</div>
             <div>
-              <p class="kpi-label">${escapeHtml(card.label)}</p>
-              <h3 class="kpi-title">${escapeHtml(card.title)}</h3>
+              <p class="kpi-label">${escapeHtml(card[0])}</p>
             </div>
           </div>
-          <div class="kpi-value">${card.value}</div>
+          <div class="kpi-value">${card[1]}</div>
         </div>
       `
     )
     .join("");
+
+  renderMiniDistributions(summary);
+}
+
+function renderSimpleList(target, rows, keyField) {
+  if (!target) return;
+  if (!rows || !rows.length) {
+    target.innerHTML = `<div class="empty-state">Not enough data yet.</div>`;
+    return;
+  }
+
+  target.innerHTML = `
+    <table class="admin-table">
+      <thead><tr><th>Name</th><th>Count</th></tr></thead>
+      <tbody>
+        ${rows
+          .map((r) => `<tr><td>${escapeHtml(r[keyField] ?? "—")}</td><td>${escapeHtml(r.total ?? 0)}</td></tr>`)
+          .join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderMiniDistributions(summary = {}) {
+  renderSimpleList(answerModeDistribution, summary.answer_mode_distribution || [], "answer_mode");
+  renderSimpleList(categoryDistribution, summary.category_distribution || [], "category");
 }
 
 function renderChips(container, activeValue, onClickName) {
@@ -345,10 +363,10 @@ function closeExpertModal() {
 }
 
 async function loadSummary() {
-  const res = await fetch("/api/admin/summary");
+  const res = await fetch("/api/admin/dashboard-summary");
   const data = await res.json();
-  state.summary = data || {};
-  renderKpis(data.totals || {});
+  state.dashboardSummary = data || {};
+  renderKpis(data || {});
 }
 
 async function loadUnresolved() {

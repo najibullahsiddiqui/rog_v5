@@ -37,6 +37,24 @@ def get_summary():
     return analytics_service.summary()
 
 
+@router.get("/admin/analytics", response_class=HTMLResponse)
+def admin_analytics(request: Request):
+    return templates.TemplateResponse(
+        "admin_analytics.html",
+        {"request": request},
+    )
+
+
+@router.get("/api/admin/dashboard-summary")
+def get_dashboard_summary():
+    return analytics_service.dashboard_summary()
+
+
+@router.get("/api/admin/analytics")
+def get_analytics(range_days: int = Query(default=30, ge=1, le=365)):
+    return analytics_service.analytics_breakdown(range_days=range_days)
+
+
 @router.get("/api/admin/unresolved")
 def get_unresolved(
     category: str | None = Query(default=None),

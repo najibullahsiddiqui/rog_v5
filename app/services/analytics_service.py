@@ -9,3 +9,9 @@ class AnalyticsService:
 
     def summary(self) -> dict:
         return self.repository.dashboard_summary()
+
+    def dashboard_summary(self) -> dict:
+        return self.repository.dashboard_summary_v2()
+
+    def analytics_breakdown(self, range_days: int = 30) -> dict:
+        return self.repository.analytics_breakdown(range_days=range_days)

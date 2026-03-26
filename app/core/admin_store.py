@@ -391,3 +391,244 @@ class AdminStore:
             item["citations"] = json.loads(item.get("citations_json") or "[]")
             items.append(item)
         return items
+
+    def _table_exists(self, conn: sqlite3.Connection, table: str) -> bool:
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (table,),
+        ).fetchone()
+        return bool(row)
+
+    def dashboard_summary_v2(self) -> dict[str, Any]:
+        with self._conn() as conn:
+            def safe_count(table: str, where: str = "") -> int:
+                if not self._table_exists(conn, table):
+                    return 0
+                query = f"SELECT COUNT(*) FROM {table}"
+                if where:
+                    query += f" WHERE {where}"
+                return int(conn.execute(query).fetchone()[0])
+
+            totals = {
+                "data_sources_total": safe_count("data_sources"),
+                "documents_total": safe_count("source_documents"),
+                "chunks_total": safe_count("document_chunks"),
+                "qna_pairs_total": safe_count("qna_pairs", "status='active'"),
+                "expert_answers_total": safe_count("expert_answers", "is_active=1"),
+                "unresolved_open": safe_count("unresolved_queries", "status='open'"),
+                "wrong_answer_reports_open": safe_count("wrong_answer_reports", "status='open'"),
+                "chats_total": safe_count("chat_sessions"),
+                "recent_sessions_24h": safe_count(
+                    "chat_sessions",
+                    "started_at >= datetime('now', '-1 day')",
+                ),
+                "active_sessions": safe_count("chat_sessions", "status='active'"),
+            }
+
+            answer_mode_distribution: list[dict[str, Any]] = []
+            if self._table_exists(conn, "chat_messages"):
+                rows = conn.execute(
+                    """
+                    SELECT COALESCE(answer_mode, 'unknown') AS answer_mode, COUNT(*) AS total
+                    FROM chat_messages
+                    GROUP BY COALESCE(answer_mode, 'unknown')
+                    ORDER BY total DESC
+                    """
+                ).fetchall()
+                answer_mode_distribution = [dict(r) for r in rows]
+
+            category_distribution: list[dict[str, Any]] = []
+            if self._table_exists(conn, "categories") and self._table_exists(conn, "qna_pairs"):
+                rows = conn.execute(
+                    """
+                    SELECT COALESCE(c.code, 'unassigned') AS category, COUNT(*) AS total
+                    FROM qna_pairs q
+                    LEFT JOIN categories c ON c.id = q.category_id
+                    GROUP BY COALESCE(c.code, 'unassigned')
+                    ORDER BY total DESC
+                    """
+                ).fetchall()
+                category_distribution = [dict(r) for r in rows]
+
+            feedback_summary = {
+                "total": 0,
+                "satisfied": 0,
+                "unsatisfied": 0,
+                "satisfaction_rate": 0.0,
+            }
+            feedback_table = "user_feedback" if self._table_exists(conn, "user_feedback") else "answer_feedback"
+            if self._table_exists(conn, feedback_table):
+                row = conn.execute(
+                    f"""
+                    SELECT
+                        COUNT(*) AS total,
+                        SUM(CASE WHEN satisfied=1 THEN 1 ELSE 0 END) AS satisfied,
+                        SUM(CASE WHEN satisfied=0 THEN 1 ELSE 0 END) AS unsatisfied
+                    FROM {feedback_table}
+                    """
+                ).fetchone()
+                total = int(row["total"] or 0)
+                sat = int(row["satisfied"] or 0)
+                unsat = int(row["unsatisfied"] or 0)
+                feedback_summary = {
+                    "total": total,
+                    "satisfied": sat,
+                    "unsatisfied": unsat,
+                    "satisfaction_rate": round((sat / total) if total else 0.0, 4),
+                }
+
+        return {
+            "totals": totals,
+            "answer_mode_distribution": answer_mode_distribution,
+            "category_distribution": category_distribution,
+            "feedback_summary": feedback_summary,
+        }
+
+    def analytics_breakdown(self, range_days: int = 30) -> dict[str, Any]:
+        range_days = max(1, min(int(range_days), 365))
+        with self._conn() as conn:
+            def query_rows(sql: str, params: tuple = ()) -> list[dict[str, Any]]:
+                rows = conn.execute(sql, params).fetchall()
+                return [dict(r) for r in rows]
+
+            chat_volume = query_rows(
+                """
+                SELECT date(created_at) AS bucket, COUNT(*) AS total
+                FROM chat_messages
+                WHERE datetime(created_at) >= datetime('now', ?)
+                GROUP BY date(created_at)
+                ORDER BY bucket ASC
+                """,
+                (f"-{range_days} day",),
+            ) if self._table_exists(conn, "chat_messages") else []
+
+            unresolved_trend = query_rows(
+                """
+                SELECT date(created_at) AS bucket, COUNT(*) AS total
+                FROM unresolved_queries
+                WHERE datetime(created_at) >= datetime('now', ?)
+                GROUP BY date(created_at)
+                ORDER BY bucket ASC
+                """,
+                (f"-{range_days} day",),
+            ) if self._table_exists(conn, "unresolved_queries") else []
+
+            wrong_answer_trend = query_rows(
+                """
+                SELECT date(created_at) AS bucket, COUNT(*) AS total
+                FROM wrong_answer_reports
+                WHERE datetime(created_at) >= datetime('now', ?)
+                GROUP BY date(created_at)
+                ORDER BY bucket ASC
+                """,
+                (f"-{range_days} day",),
+            ) if self._table_exists(conn, "wrong_answer_reports") else []
+
+            answer_mode_rate = query_rows(
+                """
+                SELECT COALESCE(answer_mode, 'unknown') AS answer_mode, COUNT(*) AS total
+                FROM chat_messages
+                WHERE datetime(created_at) >= datetime('now', ?)
+                GROUP BY COALESCE(answer_mode, 'unknown')
+                ORDER BY total DESC
+                """,
+                (f"-{range_days} day",),
+            ) if self._table_exists(conn, "chat_messages") else []
+
+            feedback_table = "user_feedback" if self._table_exists(conn, "user_feedback") else "answer_feedback"
+            feedback_satisfaction_trend = query_rows(
+                f"""
+                SELECT
+                    date(created_at) AS bucket,
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN satisfied=1 THEN 1 ELSE 0 END) AS satisfied,
+                    ROUND(CAST(SUM(CASE WHEN satisfied=1 THEN 1 ELSE 0 END) AS REAL) / COUNT(*), 4) AS satisfaction_rate
+                FROM {feedback_table}
+                WHERE datetime(created_at) >= datetime('now', ?)
+                GROUP BY date(created_at)
+                ORDER BY bucket ASC
+                """,
+                (f"-{range_days} day",),
+            ) if self._table_exists(conn, feedback_table) else []
+
+            top_categories = query_rows(
+                """
+                SELECT COALESCE(c.code, 'unassigned') AS category, COUNT(*) AS total
+                FROM chat_messages m
+                LEFT JOIN categories c ON c.id = m.category_id
+                WHERE datetime(m.created_at) >= datetime('now', ?)
+                GROUP BY COALESCE(c.code, 'unassigned')
+                ORDER BY total DESC
+                LIMIT 10
+                """,
+                (f"-{range_days} day",),
+            ) if self._table_exists(conn, "chat_messages") and self._table_exists(conn, "categories") else []
+
+            top_repeated_queries = query_rows(
+                """
+                SELECT COALESCE(normalized_question, lower(trim(question_text))) AS query, COUNT(*) AS total
+                FROM chat_messages
+                WHERE question_text IS NOT NULL
+                  AND datetime(created_at) >= datetime('now', ?)
+                GROUP BY COALESCE(normalized_question, lower(trim(question_text)))
+                HAVING COUNT(*) > 1
+                ORDER BY total DESC
+                LIMIT 10
+                """,
+                (f"-{range_days} day",),
+            ) if self._table_exists(conn, "chat_messages") else []
+
+            top_failed_queries = query_rows(
+                """
+                SELECT COALESCE(normalized_question, lower(trim(question))) AS query, COUNT(*) AS total
+                FROM unresolved_queries
+                WHERE datetime(created_at) >= datetime('now', ?)
+                GROUP BY COALESCE(normalized_question, lower(trim(question)))
+                ORDER BY total DESC
+                LIMIT 10
+                """,
+                (f"-{range_days} day",),
+            ) if self._table_exists(conn, "unresolved_queries") else []
+
+            source_contribution = query_rows(
+                """
+                SELECT COALESCE(sd.file_name, 'unknown') AS source, COUNT(*) AS total
+                FROM message_citations mc
+                LEFT JOIN source_documents sd ON sd.id = mc.source_document_id
+                GROUP BY COALESCE(sd.file_name, 'unknown')
+                ORDER BY total DESC
+                LIMIT 10
+                """
+            ) if self._table_exists(conn, "message_citations") else []
+
+            latency_metrics = {
+                "avg_ms": None,
+                "p95_ms": None,
+                "sample_size": 0,
+            }
+            if self._table_exists(conn, "chat_messages") and self._column_exists(conn, "chat_messages", "latency_ms"):
+                row = conn.execute(
+                    """
+                    SELECT AVG(latency_ms) AS avg_ms, COUNT(*) AS sample_size
+                    FROM chat_messages
+                    WHERE latency_ms IS NOT NULL
+                      AND datetime(created_at) >= datetime('now', ?)
+                    """,
+                    (f"-{range_days} day",),
+                ).fetchone()
+                latency_metrics["avg_ms"] = row["avg_ms"]
+                latency_metrics["sample_size"] = int(row["sample_size"] or 0)
+
+        return {
+            "range_days": range_days,
+            "chat_volume": chat_volume,
+            "unresolved_trend": unresolved_trend,
+            "wrong_answer_trend": wrong_answer_trend,
+            "answer_mode_rate": answer_mode_rate,
+            "feedback_satisfaction_trend": feedback_satisfaction_trend,
+            "top_categories": top_categories,
+            "top_repeated_queries": top_repeated_queries,
+            "top_failed_queries": top_failed_queries,
+            "source_contribution": source_contribution,
+            "latency_metrics": latency_metrics,
+        }
