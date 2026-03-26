@@ -14,6 +14,7 @@ from app.schemas import (
     DataSourceStatusPayload,
     ExpertAnswerPayload,
     JsonConvertPayload,
+    QnaPairPayload,
 )
 from app.services import AnalyticsService, CategoriesService, ExpertAnswersService
 from app.repositories import AdminRepository
@@ -231,6 +232,84 @@ def import_json_convert(payload: JsonConvertPayload):
         "errors": errors,
         "audit_log_id": audit_id,
     }
+
+
+@router.get("/api/admin/qna-pairs")
+def list_qna_pairs(
+    search: str | None = Query(default=None),
+    category: str | None = Query(default=None),
+    status: str | None = Query(default="active"),
+    approval_status: str | None = Query(default="approved"),
+):
+    items = admin_repository.list_qna_pairs(
+        search=search,
+        category_code=categories_service.normalize(category) if category else None,
+        status=status,
+        approval_status=approval_status,
+    )
+    return {"items": items}
+
+
+@router.post("/api/admin/qna-pairs")
+def create_qna_pair(payload: QnaPairPayload):
+    q = (payload.question or "").strip()
+    a = (payload.answer or "").strip()
+    if not q or not a:
+        raise HTTPException(status_code=400, detail="question and answer are required")
+
+    dupes = admin_repository.duplicate_qna_candidates(q, limit=3)
+    pair_id = admin_repository.create_qna_pair(
+        question=q,
+        answer=a,
+        category_code=categories_service.normalize(payload.category_code) if payload.category_code else None,
+        source_note=payload.source_note,
+        is_exact_eligible=payload.is_exact_eligible,
+        is_semantic_eligible=payload.is_semantic_eligible,
+        approval_status=payload.approval_status,
+        priority=payload.priority,
+    )
+    return {"ok": True, "qna_pair_id": pair_id, "duplicate_candidates": dupes}
+
+
+@router.put("/api/admin/qna-pairs/{qna_pair_id}")
+def update_qna_pair(qna_pair_id: int, payload: QnaPairPayload):
+    success = admin_repository.update_qna_pair(
+        qna_pair_id,
+        {
+            "question": payload.question,
+            "answer": payload.answer,
+            "category_code": categories_service.normalize(payload.category_code) if payload.category_code else None,
+            "source_note": payload.source_note,
+            "is_exact_eligible": payload.is_exact_eligible,
+            "is_semantic_eligible": payload.is_semantic_eligible,
+            "approval_status": payload.approval_status,
+            "priority": payload.priority,
+        },
+    )
+    if not success:
+        raise HTTPException(status_code=404, detail="Q&A pair not found")
+    return {"ok": True}
+
+
+@router.post("/api/admin/qna-pairs/{qna_pair_id}/archive")
+def archive_qna_pair(qna_pair_id: int):
+    success = admin_repository.archive_qna_pair(qna_pair_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Q&A pair not found")
+    return {"ok": True}
+
+
+@router.delete("/api/admin/qna-pairs/{qna_pair_id}")
+def delete_qna_pair(qna_pair_id: int):
+    success = admin_repository.delete_qna_pair(qna_pair_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Q&A pair not found")
+    return {"ok": True}
+
+
+@router.get("/api/admin/qna-pairs/duplicates")
+def qna_duplicates(question: str = Query(..., min_length=1)):
+    return {"items": admin_repository.duplicate_qna_candidates(question, limit=5)}
 
 
 @router.post("/api/admin/expert-answer")

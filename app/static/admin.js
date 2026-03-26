@@ -34,6 +34,22 @@ const importJsonBtn = document.getElementById("importJsonBtn");
 const jsonMappingFields = document.getElementById("jsonMappingFields");
 const jsonPreviewTable = document.getElementById("jsonPreviewTable");
 const jsonErrorsBox = document.getElementById("jsonErrorsBox");
+const qnaSearchInput = document.getElementById("qnaSearchInput");
+const qnaStatusFilter = document.getElementById("qnaStatusFilter");
+const qnaApprovalFilter = document.getElementById("qnaApprovalFilter");
+const qnaRefreshBtn = document.getElementById("qnaRefreshBtn");
+const qnaPairsTable = document.getElementById("qnaPairsTable");
+const qnaEditId = document.getElementById("qnaEditId");
+const qnaQuestionInput = document.getElementById("qnaQuestionInput");
+const qnaAnswerInput = document.getElementById("qnaAnswerInput");
+const qnaCategoryInput = document.getElementById("qnaCategoryInput");
+const qnaSourceNoteInput = document.getElementById("qnaSourceNoteInput");
+const qnaPriorityInput = document.getElementById("qnaPriorityInput");
+const qnaApprovalInput = document.getElementById("qnaApprovalInput");
+const qnaExactFlag = document.getElementById("qnaExactFlag");
+const qnaSemanticFlag = document.getElementById("qnaSemanticFlag");
+const qnaSaveBtn = document.getElementById("qnaSaveBtn");
+const qnaClearBtn = document.getElementById("qnaClearBtn");
 
 const expertModal = document.getElementById("expertModal");
 const modalOverlay = document.getElementById("modalOverlay");
@@ -64,6 +80,7 @@ const state = {
   activeSourceId: null,
   sourceDocuments: [],
   jsonPreview: null,
+  qnaPairs: [],
 };
 
 function escapeHtml(text) {
@@ -402,6 +419,139 @@ async function loadFeedback() {
   renderFeedbackTables();
 }
 
+function buildQnaPairsTable(items) {
+  if (!items.length) return `<div class="empty-state">No Q&A pairs found.</div>`;
+  return `
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>ID</th><th>Category</th><th>Question</th><th>Answer</th><th>Approval</th><th>Status</th><th>Flags</th><th>Priority</th><th>Updated</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${items.map((q) => `
+          <tr>
+            <td>${escapeHtml(q.id)}</td>
+            <td>${escapeHtml(q.category_code || "—")}</td>
+            <td>${escapeHtml(q.question || "")}</td>
+            <td>${escapeHtml((q.answer || "").slice(0, 120))}</td>
+            <td>${escapeHtml(q.approval_status || "approved")}</td>
+            <td>${escapeHtml(q.status || "active")}</td>
+            <td>${q.is_exact_eligible ? "E" : "—"} / ${q.is_semantic_eligible ? "S" : "—"}</td>
+            <td>${escapeHtml(q.priority || 0)}</td>
+            <td>${escapeHtml(q.updated_at || "")}</td>
+            <td>
+              <button class="action-btn" onclick="editQnaPair(${q.id})">Edit</button>
+              <button class="action-btn" onclick="archiveQnaPair(${q.id})">Archive</button>
+              <button class="action-btn" onclick="deleteQnaPair(${q.id})">Delete</button>
+            </td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderQnaPairs() {
+  if (!qnaPairsTable) return;
+  qnaPairsTable.innerHTML = buildQnaPairsTable(state.qnaPairs || []);
+}
+
+async function loadQnaPairs() {
+  const search = encodeURIComponent((qnaSearchInput?.value || "").trim());
+  const status = encodeURIComponent(qnaStatusFilter?.value || "active");
+  const approval = encodeURIComponent(qnaApprovalFilter?.value || "approved");
+  const res = await fetch(`/api/admin/qna-pairs?search=${search}&status=${status}&approval_status=${approval}`);
+  const data = await res.json();
+  state.qnaPairs = data.items || [];
+  renderQnaPairs();
+}
+
+function clearQnaForm() {
+  if (qnaEditId) qnaEditId.value = "";
+  if (qnaQuestionInput) qnaQuestionInput.value = "";
+  if (qnaAnswerInput) qnaAnswerInput.value = "";
+  if (qnaCategoryInput) qnaCategoryInput.value = "";
+  if (qnaSourceNoteInput) qnaSourceNoteInput.value = "";
+  if (qnaPriorityInput) qnaPriorityInput.value = "0";
+  if (qnaApprovalInput) qnaApprovalInput.value = "approved";
+  if (qnaExactFlag) qnaExactFlag.checked = true;
+  if (qnaSemanticFlag) qnaSemanticFlag.checked = true;
+}
+
+function editQnaPair(qnaId) {
+  const item = (state.qnaPairs || []).find((q) => Number(q.id) === Number(qnaId));
+  if (!item) return;
+  qnaEditId.value = item.id;
+  qnaQuestionInput.value = item.question || "";
+  qnaAnswerInput.value = item.answer || "";
+  qnaCategoryInput.value = item.category_code || "";
+  qnaSourceNoteInput.value = item.source_note || "";
+  qnaPriorityInput.value = item.priority || 0;
+  qnaApprovalInput.value = item.approval_status || "approved";
+  qnaExactFlag.checked = !!item.is_exact_eligible;
+  qnaSemanticFlag.checked = !!item.is_semantic_eligible;
+}
+
+async function saveQnaPair() {
+  const editId = Number(qnaEditId?.value || 0);
+  const payload = {
+    question: (qnaQuestionInput?.value || "").trim(),
+    answer: (qnaAnswerInput?.value || "").trim(),
+    category_code: (qnaCategoryInput?.value || "").trim() || null,
+    source_note: (qnaSourceNoteInput?.value || "").trim() || null,
+    priority: Number(qnaPriorityInput?.value || 0) || 0,
+    approval_status: qnaApprovalInput?.value || "approved",
+    is_exact_eligible: !!qnaExactFlag?.checked,
+    is_semantic_eligible: !!qnaSemanticFlag?.checked,
+  };
+
+  if (!payload.question || !payload.answer) {
+    alert("Question and answer are required.");
+    return;
+  }
+
+  const url = editId ? `/api/admin/qna-pairs/${editId}` : "/api/admin/qna-pairs";
+  const method = editId ? "PUT" : "POST";
+  const res = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok || (data.ok === false)) {
+    alert(data.detail || data.message || "Failed to save Q&A pair.");
+    return;
+  }
+
+  if (data.duplicate_candidates && data.duplicate_candidates.length) {
+    console.warn("Potential duplicates:", data.duplicate_candidates);
+  }
+
+  clearQnaForm();
+  await loadQnaPairs();
+}
+
+async function archiveQnaPair(qnaId) {
+  const res = await fetch(`/api/admin/qna-pairs/${qnaId}/archive`, { method: "POST" });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    alert(data.detail || "Failed to archive Q&A pair.");
+    return;
+  }
+  await loadQnaPairs();
+}
+
+async function deleteQnaPair(qnaId) {
+  const res = await fetch(`/api/admin/qna-pairs/${qnaId}`, { method: "DELETE" });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    alert(data.detail || "Failed to delete Q&A pair.");
+    return;
+  }
+  await loadQnaPairs();
+}
+
 function buildSourcesTable(items) {
   if (!items.length) {
     return `<div class="empty-state">No data sources configured.</div>`;
@@ -701,7 +851,7 @@ async function refreshAll() {
   refreshBtn.innerHTML = `<span>↻</span><span>Refreshing...</span>`;
 
   try {
-    await Promise.all([loadSummary(), loadUnresolved(), loadFeedback(), loadDataSources()]);
+    await Promise.all([loadSummary(), loadUnresolved(), loadFeedback(), loadDataSources(), loadQnaPairs()]);
   } catch (error) {
     console.error(error);
     alert("Failed to load dashboard data.");
@@ -798,6 +948,9 @@ window.setFeedbackCategory = setFeedbackCategory;
 window.viewSourceDocuments = viewSourceDocuments;
 window.toggleSourceStatus = toggleSourceStatus;
 window.triggerSourceReingest = triggerSourceReingest;
+window.editQnaPair = editQnaPair;
+window.archiveQnaPair = archiveQnaPair;
+window.deleteQnaPair = deleteQnaPair;
 
 refreshBtn.addEventListener("click", refreshAll);
 
@@ -808,6 +961,12 @@ saveExpertBtn.addEventListener("click", saveExpertAnswer);
 if (addSourceBtn) addSourceBtn.addEventListener("click", addSource);
 if (previewJsonBtn) previewJsonBtn.addEventListener("click", previewJsonConvert);
 if (importJsonBtn) importJsonBtn.addEventListener("click", importJsonConvert);
+if (qnaSaveBtn) qnaSaveBtn.addEventListener("click", saveQnaPair);
+if (qnaClearBtn) qnaClearBtn.addEventListener("click", clearQnaForm);
+if (qnaRefreshBtn) qnaRefreshBtn.addEventListener("click", loadQnaPairs);
+if (qnaSearchInput) qnaSearchInput.addEventListener("input", loadQnaPairs);
+if (qnaStatusFilter) qnaStatusFilter.addEventListener("change", loadQnaPairs);
+if (qnaApprovalFilter) qnaApprovalFilter.addEventListener("change", loadQnaPairs);
 if (jsonFileInput) {
   jsonFileInput.addEventListener("change", async (event) => {
     const file = event.target.files && event.target.files[0];

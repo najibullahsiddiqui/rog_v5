@@ -81,6 +81,16 @@
             </span>
             <span class="menu-text">JSON Convert</span>
           </button>
+
+          <button class="menu-item" type="button" data-section="qna-pairs">
+            <span class="menu-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+              </svg>
+            </span>
+            <span class="menu-text">Q&A Pairs</span>
+          </button>
         </nav>
       </div>
 
@@ -296,6 +306,67 @@
             <div id="jsonMappingFields" class="table-wrap"></div>
             <div id="jsonPreviewTable" class="table-wrap mt-18"></div>
             <div id="jsonErrorsBox" class="table-wrap mt-18"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="section-qna-pairs" class="section-block view-section hidden-view">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>Q&A Pairs</h2>
+              <p class="panel-subtitle">Manage approved Q&A memory with full CRUD and flags.</p>
+            </div>
+          </div>
+          <div class="panel-actions" style="margin-bottom: 12px;">
+            <input id="qnaSearchInput" type="text" placeholder="Search question/answer/source note" />
+            <select id="qnaStatusFilter">
+              <option value="active">active</option>
+              <option value="archived">archived</option>
+              <option value="">all</option>
+            </select>
+            <select id="qnaApprovalFilter">
+              <option value="approved">approved</option>
+              <option value="pending">pending</option>
+              <option value="rejected">rejected</option>
+              <option value="">all</option>
+            </select>
+            <button id="qnaRefreshBtn" class="btn btn-secondary" type="button">Refresh Q&A</button>
+          </div>
+
+          <div id="qnaPairsTable" class="table-wrap"></div>
+        </div>
+
+        <div class="panel mt-18">
+          <div class="panel-header">
+            <div>
+              <h2>Create / Edit Q&A Pair</h2>
+            </div>
+          </div>
+          <input id="qnaEditId" type="hidden" />
+          <div class="form-group">
+            <label for="qnaQuestionInput">Question</label>
+            <input id="qnaQuestionInput" type="text" placeholder="Question" />
+          </div>
+          <div class="form-group">
+            <label for="qnaAnswerInput">Answer</label>
+            <textarea id="qnaAnswerInput" rows="5" placeholder="Answer"></textarea>
+          </div>
+          <div class="panel-actions">
+            <input id="qnaCategoryInput" type="text" placeholder="category code (optional)" />
+            <input id="qnaSourceNoteInput" type="text" placeholder="source note (optional)" />
+            <input id="qnaPriorityInput" type="number" placeholder="priority" value="0" />
+            <select id="qnaApprovalInput">
+              <option value="approved">approved</option>
+              <option value="pending">pending</option>
+              <option value="rejected">rejected</option>
+            </select>
+            <label><input id="qnaExactFlag" type="checkbox" checked /> exact</label>
+            <label><input id="qnaSemanticFlag" type="checkbox" checked /> semantic</label>
+          </div>
+          <div class="panel-actions" style="margin-top:12px;">
+            <button id="qnaSaveBtn" class="btn btn-primary" type="button">Save Q&A</button>
+            <button id="qnaClearBtn" class="btn btn-secondary" type="button">Clear</button>
           </div>
         </div>
       </section>

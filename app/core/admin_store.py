@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
@@ -99,6 +100,7 @@ class AdminStore:
 
             apply_v2_schema(conn)
             self._ensure_data_source_columns(conn)
+            self._ensure_qna_pair_columns(conn)
 
     def _ensure_data_source_columns(self, conn: sqlite3.Connection) -> None:
         if not self._table_exists(conn, "data_sources"):
@@ -117,6 +119,20 @@ class AdminStore:
         if not self._column_exists(conn, "data_sources", "last_ingestion_at"):
             conn.execute(
                 "ALTER TABLE data_sources ADD COLUMN last_ingestion_at TEXT"
+            )
+
+    def _ensure_qna_pair_columns(self, conn: sqlite3.Connection) -> None:
+        if not self._table_exists(conn, "qna_pairs"):
+            return
+
+        if not self._column_exists(conn, "qna_pairs", "approval_status"):
+            conn.execute(
+                "ALTER TABLE qna_pairs ADD COLUMN approval_status TEXT DEFAULT 'approved'"
+            )
+
+        if not self._column_exists(conn, "qna_pairs", "priority"):
+            conn.execute(
+                "ALTER TABLE qna_pairs ADD COLUMN priority INTEGER DEFAULT 0"
             )
 
     def _ensure_default_pdf_source(self, conn: sqlite3.Connection) -> int | None:
@@ -409,9 +425,10 @@ class AdminStore:
                     """
                     INSERT INTO qna_pairs (
                         category_id, source_document_id, question, normalized_question, answer,
-                        is_exact_eligible, is_semantic_eligible, status, source_note, created_by
+                        is_exact_eligible, is_semantic_eligible, status, source_note, created_by,
+                        approval_status, priority
                     )
-                    VALUES (?, NULL, ?, ?, ?, ?, ?, 'active', ?, 'json_import')
+                    VALUES (?, NULL, ?, ?, ?, ?, ?, 'active', ?, 'json_import', 'approved', ?)
                     """,
                     (
                         category_id,
@@ -421,11 +438,234 @@ class AdminStore:
                         1 if record.get("is_exact_eligible", True) else 0,
                         1 if record.get("is_semantic_eligible", True) else 0,
                         str(record.get("source_note") or "json_import"),
+                        int(record.get("priority") or 0),
                     ),
                 )
                 created += 1
 
         return created, errors
+
+    def list_qna_pairs(
+        self,
+        *,
+        search: str | None = None,
+        category_code: str | None = None,
+        status: str | None = None,
+        approval_status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            self._ensure_qna_pair_columns(conn)
+            query = """
+                SELECT
+                    q.id,
+                    q.question,
+                    q.normalized_question,
+                    q.answer,
+                    q.is_exact_eligible,
+                    q.is_semantic_eligible,
+                    q.status,
+                    q.approval_status,
+                    COALESCE(q.priority, 0) AS priority,
+                    q.source_note,
+                    q.created_at,
+                    q.updated_at,
+                    c.code AS category_code
+                FROM qna_pairs q
+                LEFT JOIN categories c ON c.id = q.category_id
+                WHERE 1=1
+            """
+            params: list[Any] = []
+            if status:
+                query += " AND q.status=?"
+                params.append(status)
+            if approval_status:
+                query += " AND COALESCE(q.approval_status, 'approved')=?"
+                params.append(approval_status)
+            if category_code:
+                query += " AND c.code=?"
+                params.append(category_code)
+            if search:
+                query += " AND (lower(q.question) LIKE ? OR lower(q.answer) LIKE ? OR lower(COALESCE(q.source_note,'')) LIKE ?)"
+                like = f"%{search.strip().lower()}%"
+                params.extend([like, like, like])
+
+            query += " ORDER BY COALESCE(q.priority, 0) DESC, q.updated_at DESC, q.id DESC"
+            rows = conn.execute(query, params).fetchall()
+            return [dict(r) for r in rows]
+
+    def create_qna_pair(
+        self,
+        *,
+        question: str,
+        answer: str,
+        category_code: str | None,
+        source_note: str | None,
+        is_exact_eligible: bool,
+        is_semantic_eligible: bool,
+        approval_status: str,
+        priority: int,
+    ) -> int:
+        normalized_question = normalize_question_text(question)
+        with self._conn() as conn:
+            self._ensure_qna_pair_columns(conn)
+            category_id = None
+            if category_code:
+                category_id = self._get_or_create_category_id(conn, code=category_code)
+
+            cur = conn.execute(
+                """
+                INSERT INTO qna_pairs (
+                    category_id, source_document_id, question, normalized_question, answer,
+                    is_exact_eligible, is_semantic_eligible, status, source_note, created_by,
+                    approval_status, priority
+                )
+                VALUES (?, NULL, ?, ?, ?, ?, ?, 'active', ?, 'admin_ui', ?, ?)
+                """,
+                (
+                    category_id,
+                    question,
+                    normalized_question,
+                    answer,
+                    1 if is_exact_eligible else 0,
+                    1 if is_semantic_eligible else 0,
+                    source_note,
+                    approval_status,
+                    int(priority),
+                ),
+            )
+            return int(cur.lastrowid)
+
+    def update_qna_pair(self, qna_pair_id: int, payload: dict[str, Any]) -> bool:
+        question = str(payload.get("question") or "").strip()
+        answer = str(payload.get("answer") or "").strip()
+        category_code = normalize_question_text(str(payload.get("category_code") or "")).replace(" ", "_")
+
+        with self._conn() as conn:
+            self._ensure_qna_pair_columns(conn)
+            category_id = None
+            if category_code:
+                category_id = self._get_or_create_category_id(conn, code=category_code)
+
+            cur = conn.execute(
+                """
+                UPDATE qna_pairs
+                SET category_id=?,
+                    question=?,
+                    normalized_question=?,
+                    answer=?,
+                    is_exact_eligible=?,
+                    is_semantic_eligible=?,
+                    source_note=?,
+                    approval_status=?,
+                    priority=?,
+                    updated_at=CURRENT_TIMESTAMP
+                WHERE id=?
+                """,
+                (
+                    category_id,
+                    question,
+                    normalize_question_text(question),
+                    answer,
+                    1 if payload.get("is_exact_eligible", True) else 0,
+                    1 if payload.get("is_semantic_eligible", True) else 0,
+                    str(payload.get("source_note") or "") or None,
+                    str(payload.get("approval_status") or "approved"),
+                    int(payload.get("priority") or 0),
+                    qna_pair_id,
+                ),
+            )
+            return cur.rowcount > 0
+
+    def archive_qna_pair(self, qna_pair_id: int) -> bool:
+        with self._conn() as conn:
+            self._ensure_qna_pair_columns(conn)
+            cur = conn.execute(
+                """
+                UPDATE qna_pairs
+                SET status='archived', updated_at=CURRENT_TIMESTAMP
+                WHERE id=?
+                """,
+                (qna_pair_id,),
+            )
+            return cur.rowcount > 0
+
+    def delete_qna_pair(self, qna_pair_id: int) -> bool:
+        with self._conn() as conn:
+            cur = conn.execute("DELETE FROM qna_pairs WHERE id=?", (qna_pair_id,))
+            return cur.rowcount > 0
+
+    def find_qna_exact(self, question: str, normalized_question: str | None = None) -> dict[str, Any] | None:
+        nq = normalize_question_text(normalized_question or question)
+        q = (question or "").strip().lower()
+        with self._conn() as conn:
+            self._ensure_qna_pair_columns(conn)
+            row = conn.execute(
+                """
+                SELECT
+                    q.*,
+                    c.code AS category_code
+                FROM qna_pairs q
+                LEFT JOIN categories c ON c.id = q.category_id
+                WHERE q.status='active'
+                  AND COALESCE(q.approval_status, 'approved')='approved'
+                  AND q.is_exact_eligible=1
+                  AND (
+                    q.normalized_question=?
+                    OR lower(q.question)=?
+                  )
+                ORDER BY COALESCE(q.priority, 0) DESC, q.updated_at DESC, q.id DESC
+                LIMIT 1
+                """,
+                (nq, q),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def find_qna_semantic_candidates(self, question: str, limit: int = 5) -> list[dict[str, Any]]:
+        nq = normalize_question_text(question)
+        with self._conn() as conn:
+            self._ensure_qna_pair_columns(conn)
+            rows = conn.execute(
+                """
+                SELECT q.*, c.code AS category_code
+                FROM qna_pairs q
+                LEFT JOIN categories c ON c.id = q.category_id
+                WHERE q.status='active'
+                  AND COALESCE(q.approval_status, 'approved')='approved'
+                  AND q.is_semantic_eligible=1
+                ORDER BY COALESCE(q.priority, 0) DESC, q.updated_at DESC, q.id DESC
+                LIMIT 200
+                """
+            ).fetchall()
+
+            scored: list[dict[str, Any]] = []
+            for row in rows:
+                item = dict(row)
+                similarity = SequenceMatcher(
+                    None,
+                    nq,
+                    normalize_question_text(item.get("question") or ""),
+                ).ratio()
+                item["semantic_score"] = float(similarity)
+                scored.append(item)
+
+            scored.sort(
+                key=lambda x: (float(x.get("semantic_score") or 0.0), int(x.get("priority") or 0), x.get("updated_at") or ""),
+                reverse=True,
+            )
+            return scored[:limit]
+
+    def duplicate_qna_candidates(self, question: str, limit: int = 5) -> list[dict[str, Any]]:
+        normalized = normalize_question_text(question)
+        candidates = self.find_qna_semantic_candidates(question, limit=limit * 3)
+        result: list[dict[str, Any]] = []
+        for c in candidates:
+            same_normalized = normalize_question_text(c.get("question") or "") == normalized
+            similarity = float(c.get("semantic_score") or 0.0)
+            if same_normalized or similarity >= 0.86:
+                result.append(c)
+            if len(result) >= limit:
+                break
+        return result
 
     def import_decision_trees(self, records: list[dict[str, Any]]) -> tuple[int, list[str]]:
         errors: list[str] = []

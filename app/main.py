@@ -131,6 +131,49 @@ def ask(payload: AskRequest):
     normalized_question = normalize_question_text(question)
 
     try:
+        qna_exact = store.find_qna_exact(
+            question=question,
+            normalized_question=normalized_question,
+        )
+        if qna_exact:
+            return {
+                "answer": qna_exact["answer"],
+                "grounded": True,
+                "citations": [],
+                "category": qna_exact.get("category_code"),
+                "predicted_category": qna_exact.get("category_code"),
+                "unresolved_query_id": None,
+                "answer_source": "qna_exact",
+                "debug": {
+                    "served_from": "qna_pair_exact",
+                    "qna_pair_id": qna_exact["id"],
+                    "query_info": {
+                        "normalized_question": normalized_question,
+                    },
+                },
+            }
+
+        qna_candidates = store.find_qna_semantic_candidates(question, limit=3)
+        if qna_candidates and float(qna_candidates[0].get("semantic_score") or 0.0) >= 0.9:
+            winner = qna_candidates[0]
+            return {
+                "answer": winner["answer"],
+                "grounded": True,
+                "citations": [],
+                "category": winner.get("category_code"),
+                "predicted_category": winner.get("category_code"),
+                "unresolved_query_id": None,
+                "answer_source": "qna_semantic",
+                "debug": {
+                    "served_from": "qna_pair_semantic",
+                    "qna_pair_id": winner["id"],
+                    "semantic_score": winner.get("semantic_score"),
+                    "query_info": {
+                        "normalized_question": normalized_question,
+                    },
+                },
+            }
+
         expert = store.find_expert_answer(
             question=question,
             normalized_question=normalized_question,

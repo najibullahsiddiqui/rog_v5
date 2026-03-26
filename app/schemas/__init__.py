@@ -5,6 +5,7 @@ from app.schemas.admin import (
     ExpertAnswerPayload,
     FeedbackPayload,
     JsonConvertPayload,
+    QnaPairPayload,
     UnresolvedCategoryPayload,
 )
 from app.schemas.common import (
@@ -30,5 +31,6 @@ __all__ = [
     "IngestionJobSchema",
     "JsonConvertPayload",
     "QueryClassificationResult",
+    "QnaPairPayload",
     "UnresolvedCategoryPayload",
 ]
