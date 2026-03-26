@@ -160,6 +160,30 @@ async function sendFeedback(satisfied, payload) {
   }
 }
 
+async function sendWrongAnswerReport(payload, note = null) {
+  try {
+    const res = await fetch("/api/feedback/wrong-answer", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        session_id: payload.session_id || null,
+        message_id: payload.message_id || null,
+        question: payload.question,
+        normalized_question: payload.normalized_question || null,
+        category: payload.category || null,
+        answer_text: payload.answer || "",
+        citations: payload.citations || [],
+        note: note || null,
+        reason_code: "incorrect_answer",
+        severity: "medium",
+      }),
+    });
+    return res.ok;
+  } catch (_) {
+    return false;
+  }
+}
+
 async function sendUnresolvedCategory(unresolvedQueryId, category) {
   try {
     const res = await fetch("/api/unresolved-category", {
@@ -241,6 +265,8 @@ function addBotAnswerMessage(data, originalQuestion) {
   `;
 
   const payload = {
+    session_id: data.session_id || data.debug?.session_id || null,
+    message_id: data.message_id || data.debug?.message_id || null,
     question: originalQuestion,
     normalized_question: data.debug?.query_info?.normalized_question || null,
     category: data.category || suggestedCategory || null,
@@ -270,19 +296,21 @@ function addBotAnswerMessage(data, originalQuestion) {
 
       likeBtn.classList.add("feedback-selected", "thumb-up-selected");
       dislikeBtn.disabled = true;
-      markFeedbackSaved(likeBtn);
+      markButtonSaved(likeBtn, "Saved");
       pulseContainer(content);
     });
   }
 
   if (dislikeBtn) {
     dislikeBtn.addEventListener("click", async () => {
+      const note = window.prompt("Optional note for wrong answer report:", "") || "";
       const ok = await sendFeedback(false, payload);
-      if (!ok) return;
+      const reportOk = await sendWrongAnswerReport(payload, note.trim() || null);
+      if (!ok && !reportOk) return;
 
       dislikeBtn.classList.add("feedback-selected", "thumb-down-selected");
       likeBtn.disabled = true;
-      markFeedbackSaved(dislikeBtn);
+      markButtonSaved(dislikeBtn, reportOk ? "Reported" : "Saved");
       pulseContainer(content);
     });
   }

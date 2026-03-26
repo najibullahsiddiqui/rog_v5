@@ -12,3 +12,6 @@ class ChatHistoryService:
 
     def list_feedback(self, category: str | None = None) -> list[dict]:
         return self.repository.list_feedback(category)
+
+    def log_wrong_answer_report(self, **kwargs) -> int:
+        return self.repository.create_wrong_answer_report(**kwargs)
