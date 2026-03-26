@@ -2342,6 +2342,13 @@ class AdminStore:
         ).fetchone()
         return int(row["id"]) if row else None
 
+    @staticmethod
+    def _safe_float(value: Any, default: float = 0.0) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
     def log_chat_interaction(
         self,
         *,
@@ -2372,13 +2379,17 @@ class AdminStore:
                 if row:
                     category_id = int(row["id"])
 
+            safe_question = (question or "").strip()
+            safe_normalized_question = (normalized_question or "").strip() or normalize_question_text(safe_question)
+            safe_answer = (answer or "").strip()
+
             evidence_payload = []
             if isinstance(citations, list):
                 evidence_payload = [
                     {
                         "doc_name": c.get("doc_name"),
                         "page_no": c.get("page_no"),
-                        "score": c.get("score"),
+                        "score": self._safe_float(c.get("score")),
                         "excerpt": c.get("excerpt"),
                     }
                     for c in citations
@@ -2404,9 +2415,9 @@ class AdminStore:
                 """,
                 (
                     session_id,
-                    question,
-                    normalized_question,
-                    answer or "",
+                    safe_question,
+                    safe_normalized_question,
+                    safe_answer,
                     answer_mode,
                     category_id,
                     1 if grounded else 0,
@@ -2440,7 +2451,7 @@ class AdminStore:
                             source_document_id,
                             citation.get("page_no"),
                             str(citation.get("excerpt") or "")[:1000],
-                            float(citation.get("score") or 0.0),
+                            self._safe_float(citation.get("score")),
                             json.dumps(citation, ensure_ascii=False),
                         ),
                     )

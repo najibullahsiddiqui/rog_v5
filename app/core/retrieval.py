@@ -5,6 +5,7 @@ import pickle
 import re
 import sqlite3
 from difflib import SequenceMatcher
+from pathlib import Path
 from typing import Any, List
 
 from app.core.category_utils import DOC_CATEGORY_MAP, category_from_question, normalize_category
@@ -151,6 +152,7 @@ class Retriever:
 
     def _load_enabled_source_documents(self) -> tuple[set[str], bool]:
         db_path = "data/admin_review.db"
+        has_db_file = Path(db_path).exists()
         try:
             conn = sqlite3.connect(db_path)
             conn.row_factory = sqlite3.Row
@@ -173,7 +175,8 @@ class Retriever:
             ).fetchall()
             return ({str(r["file_name"]) for r in rows if r["file_name"]}, has_sources)
         except Exception:
-            return set(), False
+            # Fail closed if a DB exists but source state cannot be read.
+            return set(), has_db_file
         finally:
             try:
                 conn.close()
