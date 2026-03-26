@@ -1843,6 +1843,25 @@ class AdminStore:
         )
         return int(cur.lastrowid)
 
+    def log_admin_action(
+        self,
+        *,
+        action: str,
+        entity_type: str,
+        entity_id: str | int | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> int:
+        with self._conn() as conn:
+            return self._insert_audit_log(
+                conn,
+                action=action,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                metadata=metadata or {},
+                actor_type="admin",
+                actor_id="web",
+            )
+
     def create_training_job(
         self,
         *,

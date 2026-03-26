@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -41,6 +42,7 @@ categories_service = CategoriesService()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+logger = logging.getLogger(__name__)
 
 
 @router.get("/admin", response_class=HTMLResponse)
@@ -303,6 +305,12 @@ def create_category(payload: CategoryPayload):
         retrieval_scope=payload.retrieval_scope or {},
         is_active=payload.is_active,
     )
+    admin_repository.log_admin_action(
+        action="create_category_api",
+        entity_type="categories",
+        entity_id=category_id,
+        metadata={"code": payload.code, "name": payload.name},
+    )
     return {"ok": True, "category_id": category_id}
 
 
@@ -323,6 +331,12 @@ def update_category(category_id: int, payload: CategoryPayload):
     )
     if not ok:
         raise HTTPException(status_code=404, detail="Category not found")
+    admin_repository.log_admin_action(
+        action="update_category_api",
+        entity_type="categories",
+        entity_id=category_id,
+        metadata={"code": payload.code, "name": payload.name},
+    )
     return {"ok": True}
 
 
@@ -331,6 +345,12 @@ def archive_category(category_id: int):
     ok = admin_repository.archive_category(category_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Category not found")
+    admin_repository.log_admin_action(
+        action="archive_category_api",
+        entity_type="categories",
+        entity_id=category_id,
+        metadata={},
+    )
     return {"ok": True}
 
 
@@ -369,6 +389,12 @@ def get_decision_tree(tree_id: int):
 @router.post("/api/admin/decision-trees")
 def save_decision_tree(payload: DecisionTreePayload):
     tree_id = admin_repository.save_decision_tree(payload.model_dump())
+    admin_repository.log_admin_action(
+        action="save_decision_tree_api",
+        entity_type="decision_trees",
+        entity_id=tree_id,
+        metadata={"name": payload.name},
+    )
     return {"ok": True, "tree_id": tree_id}
 
 
@@ -377,6 +403,12 @@ def delete_decision_tree(tree_id: int):
     ok = admin_repository.delete_decision_tree(tree_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Decision tree not found")
+    admin_repository.log_admin_action(
+        action="delete_decision_tree_api",
+        entity_type="decision_trees",
+        entity_id=tree_id,
+        metadata={},
+    )
     return {"ok": True}
 
 
@@ -397,6 +429,12 @@ def create_data_source(payload: DataSourceCreatePayload):
         source_format=(payload.source_format or "unknown").strip().lower(),
         uri=(payload.uri or "").strip() or None,
     )
+    admin_repository.log_admin_action(
+        action="create_data_source_api",
+        entity_type="data_sources",
+        entity_id=source_id,
+        metadata={"name": payload.name, "source_type": payload.source_type},
+    )
     return {"ok": True, "source_id": source_id}
 
 
@@ -410,12 +448,24 @@ def set_data_source_status(data_source_id: int, payload: DataSourceStatusPayload
     if payload.status not in {"enabled", "disabled"}:
         raise HTTPException(status_code=400, detail="Invalid status")
     admin_repository.set_data_source_status(data_source_id, payload.status)
+    admin_repository.log_admin_action(
+        action="set_data_source_status_api",
+        entity_type="data_sources",
+        entity_id=data_source_id,
+        metadata={"status": payload.status},
+    )
     return {"ok": True}
 
 
 @router.post("/api/admin/data-sources/{data_source_id}/reingest")
 def trigger_reingest(data_source_id: int):
     job_id = admin_repository.queue_reingest(data_source_id)
+    admin_repository.log_admin_action(
+        action="trigger_reingest_api",
+        entity_type="data_sources",
+        entity_id=data_source_id,
+        metadata={"ingestion_job_id": job_id},
+    )
     return {"ok": True, "ingestion_job_id": job_id, "status": "queued"}
 
 
@@ -527,7 +577,7 @@ def import_json_convert(payload: JsonConvertPayload):
         error_count=len(errors),
         metadata={"record_count": len(records), "errors": errors[:50]},
     )
-    return {
+    response = {
         "ok": len(errors) == 0,
         "target": target,
         "created_count": created,
@@ -535,6 +585,13 @@ def import_json_convert(payload: JsonConvertPayload):
         "errors": errors,
         "audit_log_id": audit_id,
     }
+    admin_repository.log_admin_action(
+        action="json_convert_import_api",
+        entity_type=target,
+        entity_id=audit_id,
+        metadata={"created_count": created, "error_count": len(errors)},
+    )
+    return response
 
 
 @router.get("/api/admin/qna-pairs")
@@ -571,6 +628,12 @@ def create_qna_pair(payload: QnaPairPayload):
         approval_status=payload.approval_status,
         priority=payload.priority,
     )
+    admin_repository.log_admin_action(
+        action="create_qna_pair_api",
+        entity_type="qna_pairs",
+        entity_id=pair_id,
+        metadata={"category_code": payload.category_code, "priority": payload.priority},
+    )
     return {"ok": True, "qna_pair_id": pair_id, "duplicate_candidates": dupes}
 
 
@@ -591,6 +654,12 @@ def update_qna_pair(qna_pair_id: int, payload: QnaPairPayload):
     )
     if not success:
         raise HTTPException(status_code=404, detail="Q&A pair not found")
+    admin_repository.log_admin_action(
+        action="update_qna_pair_api",
+        entity_type="qna_pairs",
+        entity_id=qna_pair_id,
+        metadata={"category_code": payload.category_code, "priority": payload.priority},
+    )
     return {"ok": True}
 
 
@@ -599,6 +668,12 @@ def archive_qna_pair(qna_pair_id: int):
     success = admin_repository.archive_qna_pair(qna_pair_id)
     if not success:
         raise HTTPException(status_code=404, detail="Q&A pair not found")
+    admin_repository.log_admin_action(
+        action="archive_qna_pair_api",
+        entity_type="qna_pairs",
+        entity_id=qna_pair_id,
+        metadata={},
+    )
     return {"ok": True}
 
 
@@ -607,6 +682,12 @@ def delete_qna_pair(qna_pair_id: int):
     success = admin_repository.delete_qna_pair(qna_pair_id)
     if not success:
         raise HTTPException(status_code=404, detail="Q&A pair not found")
+    admin_repository.log_admin_action(
+        action="delete_qna_pair_api",
+        entity_type="qna_pairs",
+        entity_id=qna_pair_id,
+        metadata={},
+    )
     return {"ok": True}
 
 

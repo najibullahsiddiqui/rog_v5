@@ -446,11 +446,6 @@ function renderFeedbackTables() {
   renderChips(chipsFeedback, state.feedbackCategory, "setFeedbackCategory");
 }
 
-function renderAllTables() {
-  renderUnresolvedTables();
-  renderFeedbackTables();
-}
-
 function openExpertModal(item) {
   document.getElementById("expertUnresolvedId").value = item.id || "";
   document.getElementById("expertQuestion").value = item.question || "";
