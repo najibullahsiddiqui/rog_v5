@@ -35,3 +35,14 @@ class ExpertAnswerPayload(BaseModel):
 class UnresolvedCategoryPayload(BaseModel):
     unresolved_query_id: int
     user_selected_category: str
+
+
+class DataSourceCreatePayload(BaseModel):
+    name: str
+    source_type: str = "manual_upload"
+    source_format: str = "pdf"
+    uri: str | None = None
+
+
+class DataSourceStatusPayload(BaseModel):
+    status: str

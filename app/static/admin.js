@@ -19,6 +19,13 @@ const chipsOverviewUnresolved = document.getElementById("chipsOverviewUnresolved
 const chipsOverviewFeedback = document.getElementById("chipsOverviewFeedback");
 const chipsUnresolved = document.getElementById("chipsUnresolved");
 const chipsFeedback = document.getElementById("chipsFeedback");
+const sourcesTable = document.getElementById("sourcesTable");
+const sourceDocumentsTable = document.getElementById("sourceDocumentsTable");
+const addSourceBtn = document.getElementById("addSourceBtn");
+const sourceNameInput = document.getElementById("sourceName");
+const sourceTypeInput = document.getElementById("sourceType");
+const sourceUriInput = document.getElementById("sourceUri");
+const sourceFormatInput = document.getElementById("sourceFormat");
 
 const expertModal = document.getElementById("expertModal");
 const modalOverlay = document.getElementById("modalOverlay");
@@ -45,6 +52,9 @@ const state = {
   feedbackCategory: "",
   unresolvedSearch: "",
   feedbackSearch: "",
+  dataSources: [],
+  activeSourceId: null,
+  sourceDocuments: [],
 };
 
 function escapeHtml(text) {
@@ -383,6 +393,147 @@ async function loadFeedback() {
   renderFeedbackTables();
 }
 
+function buildSourcesTable(items) {
+  if (!items.length) {
+    return `<div class="empty-state">No data sources configured.</div>`;
+  }
+
+  return `
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>ID</th><th>Name</th><th>Type</th><th>Format</th><th>Status</th>
+          <th>Docs</th><th>Chunks</th><th>Last Ingestion</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+      ${items.map((item) => `
+        <tr>
+          <td>${escapeHtml(item.id)}</td>
+          <td>${escapeHtml(item.name)}</td>
+          <td>${escapeHtml(item.source_type)}</td>
+          <td>${escapeHtml(item.source_format || "unknown")}</td>
+          <td>${escapeHtml(item.status)}</td>
+          <td>${escapeHtml(item.document_count || 0)}</td>
+          <td>${escapeHtml(item.chunk_count || 0)}</td>
+          <td>${escapeHtml(item.last_ingestion_status || "never")} ${escapeHtml(item.last_ingestion_at || "")}</td>
+          <td>
+            <button class="action-btn" onclick="viewSourceDocuments(${item.id})">Docs</button>
+            <button class="action-btn" onclick="toggleSourceStatus(${item.id}, '${item.status === "enabled" ? "disabled" : "enabled"}')">${item.status === "enabled" ? "Disable" : "Enable"}</button>
+            <button class="action-btn" onclick="triggerSourceReingest(${item.id})">Reingest</button>
+          </td>
+        </tr>
+      `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderSources() {
+  if (!sourcesTable) return;
+  sourcesTable.innerHTML = buildSourcesTable(state.dataSources || []);
+}
+
+function renderSourceDocuments() {
+  if (!sourceDocumentsTable) return;
+  if (!state.sourceDocuments.length) {
+    sourceDocumentsTable.innerHTML = `<div class="empty-state">Select a source to view documents.</div>`;
+    return;
+  }
+
+  sourceDocumentsTable.innerHTML = `
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>File</th><th>Version</th><th>Hash</th><th>Chunks</th><th>Status</th><th>Ingested At</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${state.sourceDocuments.map((d) => `
+          <tr>
+            <td>${escapeHtml(d.file_name)}</td>
+            <td>${escapeHtml(d.version || "—")}</td>
+            <td>${escapeHtml(d.content_hash || "—")}</td>
+            <td>${escapeHtml(d.chunk_count || 0)}</td>
+            <td>${escapeHtml(d.status || "active")}</td>
+            <td>${escapeHtml(d.ingested_at || "—")}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+async function loadDataSources() {
+  const res = await fetch("/api/admin/data-sources");
+  const data = await res.json();
+  state.dataSources = data.items || [];
+  renderSources();
+}
+
+async function viewSourceDocuments(sourceId) {
+  state.activeSourceId = sourceId;
+  const res = await fetch(`/api/admin/data-sources/${sourceId}/documents`);
+  const data = await res.json();
+  state.sourceDocuments = data.items || [];
+  renderSourceDocuments();
+}
+
+async function addSource() {
+  const payload = {
+    name: (sourceNameInput?.value || "").trim(),
+    source_type: (sourceTypeInput?.value || "manual_upload").trim(),
+    source_format: (sourceFormatInput?.value || "manual").trim().toLowerCase(),
+    uri: (sourceUriInput?.value || "").trim() || null,
+  };
+
+  if (!payload.name) {
+    alert("Source name is required.");
+    return;
+  }
+
+  const res = await fetch("/api/admin/data-sources", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    alert(data.detail || data.message || "Failed to create source.");
+    return;
+  }
+
+  sourceNameInput.value = "";
+  sourceUriInput.value = "";
+  sourceFormatInput.value = "";
+  await loadDataSources();
+}
+
+async function toggleSourceStatus(sourceId, status) {
+  const res = await fetch(`/api/admin/data-sources/${sourceId}/status`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    alert(data.detail || data.message || "Failed to update source status.");
+    return;
+  }
+
+  await loadDataSources();
+}
+
+async function triggerSourceReingest(sourceId) {
+  const res = await fetch(`/api/admin/data-sources/${sourceId}/reingest`, { method: "POST" });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    alert(data.detail || data.message || "Failed to queue reingest.");
+    return;
+  }
+  await loadDataSources();
+}
+
 async function saveExpertAnswer() {
   const payload = {
     unresolved_query_id: Number(document.getElementById("expertUnresolvedId").value || 0) || null,
@@ -436,7 +587,7 @@ async function refreshAll() {
   refreshBtn.innerHTML = `<span>↻</span><span>Refreshing...</span>`;
 
   try {
-    await Promise.all([loadSummary(), loadUnresolved(), loadFeedback()]);
+    await Promise.all([loadSummary(), loadUnresolved(), loadFeedback(), loadDataSources()]);
   } catch (error) {
     console.error(error);
     alert("Failed to load dashboard data.");
@@ -530,6 +681,9 @@ window.exportUnresolved = exportUnresolved;
 window.exportFeedback = exportFeedback;
 window.setUnresolvedCategory = setUnresolvedCategory;
 window.setFeedbackCategory = setFeedbackCategory;
+window.viewSourceDocuments = viewSourceDocuments;
+window.toggleSourceStatus = toggleSourceStatus;
+window.triggerSourceReingest = triggerSourceReingest;
 
 refreshBtn.addEventListener("click", refreshAll);
 
@@ -537,6 +691,7 @@ closeModalBtn.addEventListener("click", closeExpertModal);
 closeModalSecondaryBtn.addEventListener("click", closeExpertModal);
 modalOverlay.addEventListener("click", closeExpertModal);
 saveExpertBtn.addEventListener("click", saveExpertAnswer);
+if (addSourceBtn) addSourceBtn.addEventListener("click", addSource);
 
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !expertModal.classList.contains("hidden")) {
