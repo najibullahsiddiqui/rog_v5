@@ -61,6 +61,26 @@
             </span>
             <span class="menu-text">Feedback</span>
           </button>
+
+          <button class="menu-item" type="button" data-section="sources">
+            <span class="menu-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M4 7h16M4 12h16M4 17h16"></path>
+              </svg>
+            </span>
+            <span class="menu-text">Data Sources</span>
+          </button>
+
+          <button class="menu-item" type="button" data-section="json-convert">
+            <span class="menu-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"></path>
+              </svg>
+            </span>
+            <span class="menu-text">JSON Convert</span>
+          </button>
         </nav>
       </div>
 
@@ -200,6 +220,83 @@
 
           <div class="chips-row" id="chipsFeedback"></div>
           <div id="feedbackTable" class="table-wrap"></div>
+        </div>
+      </section>
+
+      <section id="section-sources" class="section-block view-section hidden-view">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>Data Sources</h2>
+              <p class="panel-subtitle">Manage approved ingestion sources and reindex workflows.</p>
+            </div>
+          </div>
+
+          <div class="panel-actions" style="margin-bottom: 12px;">
+            <input id="sourceName" type="text" placeholder="Source name" />
+            <select id="sourceType">
+              <option value="manual_upload">manual</option>
+              <option value="pdf_folder">pdf</option>
+              <option value="api">json/api</option>
+              <option value="database">text/db</option>
+              <option value="s3">s3</option>
+              <option value="gdrive">gdrive</option>
+            </select>
+            <input id="sourceUri" type="text" placeholder="URI/path (optional)" />
+            <input id="sourceFormat" type="text" placeholder="format: pdf/json/text/faq/manual" />
+            <button id="addSourceBtn" class="btn btn-primary" type="button">Add Source</button>
+          </div>
+
+          <div id="sourcesTable" class="table-wrap"></div>
+        </div>
+
+        <div class="panel mt-18">
+          <div class="panel-header">
+            <div>
+              <h2>Source Documents</h2>
+              <p class="panel-subtitle">Documents for selected source (version/hash/chunks).</p>
+            </div>
+          </div>
+          <div id="sourceDocumentsTable" class="table-wrap"></div>
+        </div>
+      </section>
+
+      <section id="section-json-convert" class="section-block view-section hidden-view">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>Convert JSON</h2>
+              <p class="panel-subtitle">Upload or paste JSON, validate, preview mapping, then import records.</p>
+            </div>
+          </div>
+
+          <div class="panel-actions" style="margin-bottom: 12px;">
+            <select id="jsonConvertTarget">
+              <option value="qna_pairs">Q&A pairs</option>
+              <option value="categories">Categories</option>
+              <option value="decision_trees">Decision trees</option>
+              <option value="knowledge_docs">Knowledge docs</option>
+            </select>
+            <input id="jsonFileInput" type="file" accept=".json,application/json" />
+          </div>
+
+          <textarea id="jsonConvertInput" rows="12" placeholder="Paste JSON here..."></textarea>
+
+          <div class="panel-actions" style="margin-top: 12px;">
+            <button id="previewJsonBtn" class="btn btn-secondary" type="button">Preview & Validate</button>
+            <button id="importJsonBtn" class="btn btn-primary" type="button">Import</button>
+          </div>
+
+          <div class="panel mt-18">
+            <div class="panel-header">
+              <div>
+                <h2>Field Mapping Preview</h2>
+              </div>
+            </div>
+            <div id="jsonMappingFields" class="table-wrap"></div>
+            <div id="jsonPreviewTable" class="table-wrap mt-18"></div>
+            <div id="jsonErrorsBox" class="table-wrap mt-18"></div>
+          </div>
         </div>
       </section>
     </main>

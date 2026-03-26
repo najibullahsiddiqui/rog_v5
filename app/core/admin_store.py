@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
 from pathlib import Path
 from typing import Any
 
 from app.core.pipeline import normalize_question_text
 from app.core.db_migrations import apply_v2_schema
+from app.core.config import PDF_DIR
 
 
 DB_PATH = Path("data/admin_review.db")
@@ -96,6 +98,481 @@ class AdminStore:
                 )
 
             apply_v2_schema(conn)
+            self._ensure_data_source_columns(conn)
+
+    def _ensure_data_source_columns(self, conn: sqlite3.Connection) -> None:
+        if not self._table_exists(conn, "data_sources"):
+            return
+
+        if not self._column_exists(conn, "data_sources", "source_format"):
+            conn.execute(
+                "ALTER TABLE data_sources ADD COLUMN source_format TEXT DEFAULT 'pdf'"
+            )
+
+        if not self._column_exists(conn, "data_sources", "last_ingestion_status"):
+            conn.execute(
+                "ALTER TABLE data_sources ADD COLUMN last_ingestion_status TEXT DEFAULT 'never'"
+            )
+
+        if not self._column_exists(conn, "data_sources", "last_ingestion_at"):
+            conn.execute(
+                "ALTER TABLE data_sources ADD COLUMN last_ingestion_at TEXT"
+            )
+
+    def _ensure_default_pdf_source(self, conn: sqlite3.Connection) -> int | None:
+        if not self._table_exists(conn, "data_sources"):
+            return None
+
+        row = conn.execute(
+            """
+            SELECT id
+            FROM data_sources
+            WHERE source_key='local_pdf_folder'
+            LIMIT 1
+            """
+        ).fetchone()
+        if row:
+            return int(row["id"])
+
+        cur = conn.execute(
+            """
+            INSERT INTO data_sources (
+                source_key, name, source_type, source_format, status, uri, last_ingestion_status
+            )
+            VALUES ('local_pdf_folder', 'Local PDF Folder', 'pdf_folder', 'pdf', 'enabled', ?, 'unknown')
+            """,
+            (str(PDF_DIR),),
+        )
+        return int(cur.lastrowid)
+
+    def _sync_pdf_documents(self, conn: sqlite3.Connection) -> None:
+        source_id = self._ensure_default_pdf_source(conn)
+        if not source_id or not self._table_exists(conn, "source_documents"):
+            return
+
+        for pdf_path in sorted(PDF_DIR.glob("*.pdf")):
+            row = conn.execute(
+                """
+                SELECT id FROM source_documents
+                WHERE data_source_id=? AND file_name=?
+                LIMIT 1
+                """,
+                (source_id, pdf_path.name),
+            ).fetchone()
+            if row:
+                continue
+
+            doc_key = f"pdf::{pdf_path.stem}"
+            conn.execute(
+                """
+                INSERT INTO source_documents (
+                    data_source_id, doc_key, file_name, version, content_hash, chunk_count, status, ingested_at
+                )
+                VALUES (?, ?, ?, NULL, NULL, 0, 'active', NULL)
+                """,
+                (source_id, doc_key, pdf_path.name),
+            )
+
+    def list_data_sources(self) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            self._ensure_data_source_columns(conn)
+            self._sync_pdf_documents(conn)
+
+            rows = conn.execute(
+                """
+                SELECT
+                    ds.id,
+                    ds.source_key,
+                    ds.name,
+                    ds.source_type,
+                    COALESCE(ds.source_format, 'unknown') AS source_format,
+                    ds.status,
+                    ds.uri,
+                    COALESCE(ds.last_ingestion_status, 'never') AS last_ingestion_status,
+                    ds.last_ingestion_at,
+                    ds.created_at,
+                    ds.updated_at,
+                    COUNT(sd.id) AS document_count,
+                    COALESCE(SUM(sd.chunk_count), 0) AS chunk_count
+                FROM data_sources ds
+                LEFT JOIN source_documents sd
+                    ON sd.data_source_id = ds.id
+                    AND COALESCE(sd.status, 'active') != 'deleted'
+                GROUP BY ds.id
+                ORDER BY ds.id DESC
+                """
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def create_data_source(
+        self,
+        *,
+        name: str,
+        source_type: str,
+        source_format: str,
+        uri: str | None = None,
+    ) -> int:
+        source_key = normalize_question_text(name).replace(" ", "_")[:48] or "source"
+        source_key = f"{source_key}_{source_format}_{int(time.time() * 1000)}"
+
+        with self._conn() as conn:
+            self._ensure_data_source_columns(conn)
+            cur = conn.execute(
+                """
+                INSERT INTO data_sources (
+                    source_key, name, source_type, source_format, status, uri, last_ingestion_status
+                )
+                VALUES (?, ?, ?, ?, 'enabled', ?, 'never')
+                """,
+                (source_key, name, source_type, source_format, uri),
+            )
+            return int(cur.lastrowid)
+
+    def set_data_source_status(self, data_source_id: int, status: str) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                """
+                UPDATE data_sources
+                SET status=?, updated_at=CURRENT_TIMESTAMP
+                WHERE id=?
+                """,
+                (status, data_source_id),
+            )
+
+    def list_source_documents(self, data_source_id: int) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    id,
+                    data_source_id,
+                    doc_key,
+                    file_name,
+                    version,
+                    content_hash,
+                    chunk_count,
+                    status,
+                    ingested_at,
+                    created_at,
+                    updated_at
+                FROM source_documents
+                WHERE data_source_id=?
+                ORDER BY file_name ASC
+                """,
+                (data_source_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def queue_reingest(self, data_source_id: int, trigger_type: str = "manual") -> int:
+        with self._conn() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO ingestion_jobs (data_source_id, status, trigger_type, started_at)
+                VALUES (?, 'queued', ?, CURRENT_TIMESTAMP)
+                """,
+                (data_source_id, trigger_type),
+            )
+
+            conn.execute(
+                """
+                UPDATE data_sources
+                SET last_ingestion_status='queued',
+                    last_ingestion_at=CURRENT_TIMESTAMP,
+                    updated_at=CURRENT_TIMESTAMP
+                WHERE id=?
+                """,
+                (data_source_id,),
+            )
+            return int(cur.lastrowid)
+
+    def log_import_audit(
+        self,
+        *,
+        action: str,
+        target: str,
+        status: str,
+        created_count: int,
+        error_count: int,
+        metadata: dict[str, Any] | None = None,
+    ) -> int:
+        with self._conn() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO audit_logs (
+                    actor_type, actor_id, action, entity_type, entity_id,
+                    before_json, after_json, metadata_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "admin",
+                    "web",
+                    action,
+                    target,
+                    status,
+                    None,
+                    json.dumps(
+                        {
+                            "created_count": created_count,
+                            "error_count": error_count,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    json.dumps(metadata or {}, ensure_ascii=False),
+                ),
+            )
+            return int(cur.lastrowid)
+
+    def _get_or_create_category_id(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        code: str,
+        name: str | None = None,
+        description: str | None = None,
+    ) -> int:
+        row = conn.execute(
+            "SELECT id FROM categories WHERE code=? LIMIT 1",
+            (code,),
+        ).fetchone()
+        if row:
+            return int(row["id"])
+
+        cur = conn.execute(
+            """
+            INSERT INTO categories (code, name, description, is_active)
+            VALUES (?, ?, ?, 1)
+            """,
+            (code, name or code.title(), description),
+        )
+        return int(cur.lastrowid)
+
+    def import_categories(self, records: list[dict[str, Any]]) -> tuple[int, list[str]]:
+        errors: list[str] = []
+        created = 0
+        with self._conn() as conn:
+            for idx, record in enumerate(records):
+                code = normalize_question_text(str(record.get("code") or "")).replace(" ", "_")
+                name = str(record.get("name") or "").strip()
+                description = str(record.get("description") or "").strip() or None
+
+                if not code or not name:
+                    errors.append(f"Row {idx + 1}: 'code' and 'name' are required")
+                    continue
+
+                existing = conn.execute(
+                    "SELECT id FROM categories WHERE code=?",
+                    (code,),
+                ).fetchone()
+                if existing:
+                    conn.execute(
+                        """
+                        UPDATE categories
+                        SET name=?, description=?, updated_at=CURRENT_TIMESTAMP
+                        WHERE code=?
+                        """,
+                        (name, description, code),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        INSERT INTO categories(code, name, description, is_active)
+                        VALUES (?, ?, ?, 1)
+                        """,
+                        (code, name, description),
+                    )
+                    created += 1
+
+        return created, errors
+
+    def import_qna_pairs(self, records: list[dict[str, Any]]) -> tuple[int, list[str]]:
+        errors: list[str] = []
+        created = 0
+        with self._conn() as conn:
+            for idx, record in enumerate(records):
+                question = str(record.get("question") or "").strip()
+                answer = str(record.get("answer") or "").strip()
+                category_code = normalize_question_text(str(record.get("category") or "")).replace(" ", "_")
+
+                if not question or not answer:
+                    errors.append(f"Row {idx + 1}: 'question' and 'answer' are required")
+                    continue
+
+                category_id = None
+                if category_code:
+                    category_id = self._get_or_create_category_id(
+                        conn,
+                        code=category_code,
+                    )
+
+                conn.execute(
+                    """
+                    INSERT INTO qna_pairs (
+                        category_id, source_document_id, question, normalized_question, answer,
+                        is_exact_eligible, is_semantic_eligible, status, source_note, created_by
+                    )
+                    VALUES (?, NULL, ?, ?, ?, ?, ?, 'active', ?, 'json_import')
+                    """,
+                    (
+                        category_id,
+                        question,
+                        normalize_question_text(question),
+                        answer,
+                        1 if record.get("is_exact_eligible", True) else 0,
+                        1 if record.get("is_semantic_eligible", True) else 0,
+                        str(record.get("source_note") or "json_import"),
+                    ),
+                )
+                created += 1
+
+        return created, errors
+
+    def import_decision_trees(self, records: list[dict[str, Any]]) -> tuple[int, list[str]]:
+        errors: list[str] = []
+        created = 0
+        with self._conn() as conn:
+            for idx, record in enumerate(records):
+                name = str(record.get("name") or "").strip()
+                nodes = record.get("nodes") or []
+                edges = record.get("edges") or []
+                if not name or not isinstance(nodes, list):
+                    errors.append(f"Row {idx + 1}: 'name' and list 'nodes' are required")
+                    continue
+
+                category_code = normalize_question_text(str(record.get("category") or "")).replace(" ", "_")
+                category_id = None
+                if category_code:
+                    category_id = self._get_or_create_category_id(conn, code=category_code)
+
+                tree_key = normalize_question_text(str(record.get("tree_key") or name)).replace(" ", "_")
+                tree_key = f"{tree_key}_{idx + 1}"
+                cur = conn.execute(
+                    """
+                    INSERT INTO decision_trees (
+                        tree_key, category_id, name, version, status, description, created_by
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, 'json_import')
+                    """,
+                    (
+                        tree_key,
+                        category_id,
+                        name,
+                        str(record.get("version") or "1.0.0"),
+                        str(record.get("status") or "draft"),
+                        str(record.get("description") or "") or None,
+                    ),
+                )
+                tree_id = int(cur.lastrowid)
+
+                node_id_by_key: dict[str, int] = {}
+                for n in nodes:
+                    node_key = str(n.get("node_key") or "").strip()
+                    node_type = str(n.get("node_type") or "question").strip()
+                    if not node_key:
+                        continue
+                    ncur = conn.execute(
+                        """
+                        INSERT INTO decision_tree_nodes (
+                            tree_id, node_key, node_type, prompt_text, answer_text, metadata_json, is_terminal
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            tree_id,
+                            node_key,
+                            node_type,
+                            str(n.get("prompt_text") or "") or None,
+                            str(n.get("answer_text") or "") or None,
+                            json.dumps(n.get("metadata") or {}, ensure_ascii=False),
+                            1 if n.get("is_terminal") else 0,
+                        ),
+                    )
+                    node_id_by_key[node_key] = int(ncur.lastrowid)
+
+                for e in edges:
+                    from_key = str(e.get("from_node_key") or "").strip()
+                    to_key = str(e.get("to_node_key") or "").strip()
+                    if not from_key or not to_key:
+                        continue
+                    from_id = node_id_by_key.get(from_key)
+                    to_id = node_id_by_key.get(to_key)
+                    if not from_id or not to_id:
+                        continue
+                    conn.execute(
+                        """
+                        INSERT INTO decision_tree_edges (
+                            tree_id, from_node_id, to_node_id, condition_type, condition_value, priority
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            tree_id,
+                            from_id,
+                            to_id,
+                            str(e.get("condition_type") or "option"),
+                            str(e.get("condition_value") or "") or None,
+                            int(e.get("priority") or 0),
+                        ),
+                    )
+
+                created += 1
+
+        return created, errors
+
+    def import_knowledge_docs(self, records: list[dict[str, Any]]) -> tuple[int, list[str]]:
+        errors: list[str] = []
+        created = 0
+        with self._conn() as conn:
+            source_id = self._ensure_default_pdf_source(conn)
+            if not source_id:
+                errors.append("Knowledge docs import unavailable: missing data_sources table")
+                return 0, errors
+
+            for idx, record in enumerate(records):
+                title = str(record.get("title") or record.get("file_name") or "").strip()
+                content = str(record.get("content") or "").strip()
+                if not title or not content:
+                    errors.append(f"Row {idx + 1}: 'title' (or file_name) and 'content' are required")
+                    continue
+
+                doc_key = f"json_doc::{normalize_question_text(title).replace(' ', '_')}_{idx + 1}"
+                cur = conn.execute(
+                    """
+                    INSERT INTO source_documents (
+                        data_source_id, doc_key, file_name, version, content_hash, chunk_count, status, metadata_json, ingested_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, 'active', ?, CURRENT_TIMESTAMP)
+                    """,
+                    (
+                        source_id,
+                        doc_key,
+                        f"{title}.json",
+                        str(record.get("version") or "") or None,
+                        str(record.get("content_hash") or "") or None,
+                        1,
+                        json.dumps({"origin": "json_convert", "source_type": "knowledge_doc"}, ensure_ascii=False),
+                    ),
+                )
+                source_document_id = int(cur.lastrowid)
+
+                conn.execute(
+                    """
+                    INSERT INTO document_chunks (
+                        source_document_id, chunk_key, chunk_index, normalized_text, text, metadata_json
+                    )
+                    VALUES (?, ?, 0, ?, ?, ?)
+                    """,
+                    (
+                        source_document_id,
+                        f"{doc_key}::chunk0",
+                        normalize_question_text(content),
+                        content,
+                        json.dumps({"title": title}, ensure_ascii=False),
+                    ),
+                )
+                created += 1
+
+        return created, errors
 
     def log_unresolved_query(
         self,
