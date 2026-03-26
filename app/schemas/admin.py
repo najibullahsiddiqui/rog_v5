@@ -62,3 +62,18 @@ class QnaPairPayload(BaseModel):
     is_semantic_eligible: bool = True
     approval_status: str = "approved"
     priority: int = 0
+
+
+class CategoryPayload(BaseModel):
+    code: str
+    name: str
+    description: str | None = None
+    display_order: int = 0
+    is_active: bool = True
+    routing_hint: str | None = None
+    prompt_hint: str | None = None
+    retrieval_scope: dict | None = None
+
+
+class CategorySynonymPayload(BaseModel):
+    synonym: str

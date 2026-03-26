@@ -50,6 +50,23 @@ const qnaExactFlag = document.getElementById("qnaExactFlag");
 const qnaSemanticFlag = document.getElementById("qnaSemanticFlag");
 const qnaSaveBtn = document.getElementById("qnaSaveBtn");
 const qnaClearBtn = document.getElementById("qnaClearBtn");
+const categoriesRefreshBtn = document.getElementById("categoriesRefreshBtn");
+const categoriesTable = document.getElementById("categoriesTable");
+const categoriesStatsTable = document.getElementById("categoriesStatsTable");
+const categoryEditId = document.getElementById("categoryEditId");
+const categoryCodeInput = document.getElementById("categoryCodeInput");
+const categoryNameInput = document.getElementById("categoryNameInput");
+const categoryOrderInput = document.getElementById("categoryOrderInput");
+const categoryActiveInput = document.getElementById("categoryActiveInput");
+const categoryDescriptionInput = document.getElementById("categoryDescriptionInput");
+const categoryRoutingHintInput = document.getElementById("categoryRoutingHintInput");
+const categoryPromptHintInput = document.getElementById("categoryPromptHintInput");
+const categoryScopeInput = document.getElementById("categoryScopeInput");
+const categorySynonymInput = document.getElementById("categorySynonymInput");
+const categoryAddSynonymBtn = document.getElementById("categoryAddSynonymBtn");
+const categorySaveBtn = document.getElementById("categorySaveBtn");
+const categoryClearBtn = document.getElementById("categoryClearBtn");
+const categorySynonymsTable = document.getElementById("categorySynonymsTable");
 
 const expertModal = document.getElementById("expertModal");
 const modalOverlay = document.getElementById("modalOverlay");
@@ -81,6 +98,8 @@ const state = {
   sourceDocuments: [],
   jsonPreview: null,
   qnaPairs: [],
+  categories: [],
+  categorySynonyms: [],
 };
 
 function escapeHtml(text) {
@@ -552,6 +571,203 @@ async function deleteQnaPair(qnaId) {
   await loadQnaPairs();
 }
 
+function buildCategoriesTable(items) {
+  if (!items.length) return `<div class="empty-state">No categories found.</div>`;
+  return `
+    <table class="admin-table">
+      <thead><tr><th>ID</th><th>Code</th><th>Name</th><th>Active</th><th>Order</th><th>Synonyms</th><th>Routing hint</th><th>Actions</th></tr></thead>
+      <tbody>
+        ${items.map((c) => `
+          <tr>
+            <td>${escapeHtml(c.id)}</td>
+            <td>${escapeHtml(c.code)}</td>
+            <td>${escapeHtml(c.name)}</td>
+            <td>${c.is_active ? "yes" : "no"}</td>
+            <td>${escapeHtml(c.display_order || 0)}</td>
+            <td>${escapeHtml(c.synonyms_count || 0)}</td>
+            <td>${escapeHtml(c.routing_hint || "—")}</td>
+            <td>
+              <button class="action-btn" onclick="editCategory(${c.id})">Edit</button>
+              <button class="action-btn" onclick="archiveCategory(${c.id})">Archive</button>
+              <button class="action-btn" onclick="loadCategorySynonyms(${c.id})">Synonyms</button>
+            </td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderCategories() {
+  if (categoriesTable) categoriesTable.innerHTML = buildCategoriesTable(state.categories || []);
+}
+
+function renderCategoryStats(statsItems) {
+  if (!categoriesStatsTable) return;
+  if (!statsItems || !statsItems.length) {
+    categoriesStatsTable.innerHTML = `<div class="empty-state">No category stats yet.</div>`;
+    return;
+  }
+  categoriesStatsTable.innerHTML = `
+    <table class="admin-table">
+      <thead><tr><th>Code</th><th>Q&A total</th><th>Q&A active</th><th>Q&A archived</th><th>Unresolved</th></tr></thead>
+      <tbody>
+        ${statsItems.map((s) => `
+          <tr>
+            <td>${escapeHtml(s.code || "")}</td>
+            <td>${escapeHtml(s.qna_pairs_total || 0)}</td>
+            <td>${escapeHtml(s.qna_active || 0)}</td>
+            <td>${escapeHtml(s.qna_archived || 0)}</td>
+            <td>${escapeHtml(s.unresolved_total || 0)}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderCategorySynonyms() {
+  if (!categorySynonymsTable) return;
+  if (!state.categorySynonyms.length) {
+    categorySynonymsTable.innerHTML = `<div class="empty-state">No synonyms for selected category.</div>`;
+    return;
+  }
+  categorySynonymsTable.innerHTML = `
+    <table class="admin-table">
+      <thead><tr><th>Synonym</th><th>Normalized</th></tr></thead>
+      <tbody>${state.categorySynonyms.map((s) => `
+        <tr><td>${escapeHtml(s.synonym)}</td><td>${escapeHtml(s.normalized_synonym)}</td></tr>
+      `).join("")}</tbody>
+    </table>
+  `;
+}
+
+async function loadCategories() {
+  const res = await fetch("/api/admin/categories?include_inactive=true");
+  const data = await res.json();
+  state.categories = data.items || [];
+  renderCategories();
+
+  const statsRes = await fetch("/api/admin/categories/stats");
+  const statsData = await statsRes.json();
+  renderCategoryStats(statsData.items || []);
+}
+
+function clearCategoryForm() {
+  if (categoryEditId) categoryEditId.value = "";
+  if (categoryCodeInput) categoryCodeInput.value = "";
+  if (categoryNameInput) categoryNameInput.value = "";
+  if (categoryOrderInput) categoryOrderInput.value = "0";
+  if (categoryActiveInput) categoryActiveInput.checked = true;
+  if (categoryDescriptionInput) categoryDescriptionInput.value = "";
+  if (categoryRoutingHintInput) categoryRoutingHintInput.value = "";
+  if (categoryPromptHintInput) categoryPromptHintInput.value = "";
+  if (categoryScopeInput) categoryScopeInput.value = "{}";
+  if (categorySynonymInput) categorySynonymInput.value = "";
+  state.categorySynonyms = [];
+  renderCategorySynonyms();
+}
+
+function editCategory(categoryId) {
+  const item = (state.categories || []).find((c) => Number(c.id) === Number(categoryId));
+  if (!item) return;
+  categoryEditId.value = item.id;
+  categoryCodeInput.value = item.code || "";
+  categoryNameInput.value = item.name || "";
+  categoryOrderInput.value = item.display_order || 0;
+  categoryActiveInput.checked = !!item.is_active;
+  categoryDescriptionInput.value = item.description || "";
+  categoryRoutingHintInput.value = item.routing_hint || "";
+  categoryPromptHintInput.value = item.prompt_hint || "";
+  categoryScopeInput.value = JSON.stringify(item.retrieval_scope || {}, null, 2);
+}
+
+async function saveCategory() {
+  const editId = Number(categoryEditId?.value || 0);
+  let scope = {};
+  try {
+    scope = JSON.parse(categoryScopeInput?.value || "{}");
+  } catch (err) {
+    alert("Invalid retrieval scope JSON.");
+    return;
+  }
+
+  const payload = {
+    code: (categoryCodeInput?.value || "").trim(),
+    name: (categoryNameInput?.value || "").trim(),
+    description: (categoryDescriptionInput?.value || "").trim() || null,
+    display_order: Number(categoryOrderInput?.value || 0) || 0,
+    is_active: !!categoryActiveInput?.checked,
+    routing_hint: (categoryRoutingHintInput?.value || "").trim() || null,
+    prompt_hint: (categoryPromptHintInput?.value || "").trim() || null,
+    retrieval_scope: scope,
+  };
+
+  if (!payload.code || !payload.name) {
+    alert("Category code and name are required.");
+    return;
+  }
+
+  const url = editId ? `/api/admin/categories/${editId}` : "/api/admin/categories";
+  const method = editId ? "PUT" : "POST";
+  const res = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    alert(data.detail || "Failed to save category.");
+    return;
+  }
+  await loadCategories();
+  clearCategoryForm();
+}
+
+async function archiveCategory(categoryId) {
+  const res = await fetch(`/api/admin/categories/${categoryId}/archive`, { method: "POST" });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    alert(data.detail || "Failed to archive category.");
+    return;
+  }
+  await loadCategories();
+}
+
+async function loadCategorySynonyms(categoryId) {
+  categoryEditId.value = categoryId;
+  const res = await fetch(`/api/admin/categories/${categoryId}/synonyms`);
+  const data = await res.json();
+  state.categorySynonyms = data.items || [];
+  renderCategorySynonyms();
+}
+
+async function addCategorySynonym() {
+  const categoryId = Number(categoryEditId?.value || 0);
+  if (!categoryId) {
+    alert("Select a category first.");
+    return;
+  }
+  const synonym = (categorySynonymInput?.value || "").trim();
+  if (!synonym) {
+    alert("Enter a synonym.");
+    return;
+  }
+  const res = await fetch(`/api/admin/categories/${categoryId}/synonyms`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ synonym }),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    alert(data.detail || "Failed to add synonym.");
+    return;
+  }
+  categorySynonymInput.value = "";
+  await loadCategorySynonyms(categoryId);
+  await loadCategories();
+}
+
 function buildSourcesTable(items) {
   if (!items.length) {
     return `<div class="empty-state">No data sources configured.</div>`;
@@ -851,7 +1067,7 @@ async function refreshAll() {
   refreshBtn.innerHTML = `<span>↻</span><span>Refreshing...</span>`;
 
   try {
-    await Promise.all([loadSummary(), loadUnresolved(), loadFeedback(), loadDataSources(), loadQnaPairs()]);
+    await Promise.all([loadSummary(), loadUnresolved(), loadFeedback(), loadDataSources(), loadQnaPairs(), loadCategories()]);
   } catch (error) {
     console.error(error);
     alert("Failed to load dashboard data.");
@@ -951,6 +1167,9 @@ window.triggerSourceReingest = triggerSourceReingest;
 window.editQnaPair = editQnaPair;
 window.archiveQnaPair = archiveQnaPair;
 window.deleteQnaPair = deleteQnaPair;
+window.editCategory = editCategory;
+window.archiveCategory = archiveCategory;
+window.loadCategorySynonyms = loadCategorySynonyms;
 
 refreshBtn.addEventListener("click", refreshAll);
 
@@ -967,6 +1186,10 @@ if (qnaRefreshBtn) qnaRefreshBtn.addEventListener("click", loadQnaPairs);
 if (qnaSearchInput) qnaSearchInput.addEventListener("input", loadQnaPairs);
 if (qnaStatusFilter) qnaStatusFilter.addEventListener("change", loadQnaPairs);
 if (qnaApprovalFilter) qnaApprovalFilter.addEventListener("change", loadQnaPairs);
+if (categoriesRefreshBtn) categoriesRefreshBtn.addEventListener("click", loadCategories);
+if (categorySaveBtn) categorySaveBtn.addEventListener("click", saveCategory);
+if (categoryClearBtn) categoryClearBtn.addEventListener("click", clearCategoryForm);
+if (categoryAddSynonymBtn) categoryAddSynonymBtn.addEventListener("click", addCategorySynonym);
 if (jsonFileInput) {
   jsonFileInput.addEventListener("change", async (event) => {
     const file = event.target.files && event.target.files[0];

@@ -247,6 +247,18 @@ class Retriever:
         if not category_hint:
             return candidates, 0
 
+        scoped_docs = self._load_category_scoped_docs(category_hint)
+        if scoped_docs:
+            filtered = []
+            dropped = 0
+            for c in candidates:
+                doc_name = c.get("doc_name")
+                if doc_name in scoped_docs:
+                    filtered.append(c)
+                else:
+                    dropped += 1
+            return filtered, dropped
+
         filtered = []
         dropped = 0
         for c in candidates:
@@ -258,6 +270,38 @@ class Retriever:
                 dropped += 1
 
         return filtered, dropped
+
+    def _load_category_scoped_docs(self, category_code: str) -> set[str]:
+        db_path = "data/admin_review.db"
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """
+                SELECT retrieval_scope_json
+                FROM categories
+                WHERE code=? AND is_active=1
+                LIMIT 1
+                """,
+                (category_code,),
+            ).fetchone()
+            if not row:
+                return set()
+            raw = row["retrieval_scope_json"] or ""
+            if not raw:
+                return set()
+            payload = json.loads(raw)
+            docs = payload.get("doc_names") if isinstance(payload, dict) else None
+            if isinstance(docs, list):
+                return {str(d).strip() for d in docs if str(d).strip()}
+            return set()
+        except Exception:
+            return set()
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
     def _apply_source_filter(self, candidates: list[dict]) -> tuple[list[dict], int]:
         enabled_docs, has_sources = self._load_enabled_source_documents()

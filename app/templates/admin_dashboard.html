@@ -91,6 +91,16 @@
             </span>
             <span class="menu-text">Q&A Pairs</span>
           </button>
+
+          <button class="menu-item" type="button" data-section="categories">
+            <span class="menu-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M5 3h14a2 2 0 012 2v4H3V5a2 2 0 012-2zm-2 8h18v8a2 2 0 01-2 2H5a2 2 0 01-2-2v-8z"></path>
+              </svg>
+            </span>
+            <span class="menu-text">Categories</span>
+          </button>
         </nav>
       </div>
 
@@ -368,6 +378,52 @@
             <button id="qnaSaveBtn" class="btn btn-primary" type="button">Save Q&A</button>
             <button id="qnaClearBtn" class="btn btn-secondary" type="button">Clear</button>
           </div>
+        </div>
+      </section>
+
+      <section id="section-categories" class="section-block view-section hidden-view">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>Categories</h2>
+              <p class="panel-subtitle">Manage routing categories, synonyms, scope, and ordering.</p>
+            </div>
+          </div>
+          <div class="panel-actions" style="margin-bottom:12px;">
+            <button id="categoriesRefreshBtn" class="btn btn-secondary" type="button">Refresh Categories</button>
+          </div>
+          <div id="categoriesTable" class="table-wrap"></div>
+          <div id="categoriesStatsTable" class="table-wrap mt-18"></div>
+        </div>
+
+        <div class="panel mt-18">
+          <div class="panel-header"><h2>Create / Edit Category</h2></div>
+          <input id="categoryEditId" type="hidden" />
+          <div class="panel-actions">
+            <input id="categoryCodeInput" type="text" placeholder="code" />
+            <input id="categoryNameInput" type="text" placeholder="name" />
+            <input id="categoryOrderInput" type="number" placeholder="display order" value="0" />
+            <label><input id="categoryActiveInput" type="checkbox" checked /> active</label>
+          </div>
+          <div class="form-group">
+            <label for="categoryDescriptionInput">Description</label>
+            <textarea id="categoryDescriptionInput" rows="3"></textarea>
+          </div>
+          <div class="panel-actions">
+            <input id="categoryRoutingHintInput" type="text" placeholder="routing hint (optional)" />
+            <input id="categoryPromptHintInput" type="text" placeholder="prompt hint (optional)" />
+          </div>
+          <div class="form-group">
+            <label for="categoryScopeInput">Retrieval scope JSON (e.g. {"doc_names":["FAQ-PATENTS.pdf"]})</label>
+            <textarea id="categoryScopeInput" rows="3">{}</textarea>
+          </div>
+          <div class="panel-actions">
+            <input id="categorySynonymInput" type="text" placeholder="synonym to add (optional)" />
+            <button id="categoryAddSynonymBtn" class="btn btn-secondary" type="button">Add Synonym</button>
+            <button id="categorySaveBtn" class="btn btn-primary" type="button">Save Category</button>
+            <button id="categoryClearBtn" class="btn btn-secondary" type="button">Clear</button>
+          </div>
+          <div id="categorySynonymsTable" class="table-wrap mt-18"></div>
         </div>
       </section>
     </main>

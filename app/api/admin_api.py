@@ -10,6 +10,8 @@ from fastapi.templating import Jinja2Templates
 from openpyxl import Workbook
 
 from app.schemas import (
+    CategoryPayload,
+    CategorySynonymPayload,
     DataSourceCreatePayload,
     DataSourceStatusPayload,
     ExpertAnswerPayload,
@@ -75,6 +77,73 @@ def get_unresolved(
 def get_feedback(category: str | None = Query(default=None)):
     norm = categories_service.normalize(category) if category else None
     return {"items": admin_repository.list_feedback(norm)}
+
+
+@router.get("/api/admin/categories")
+def list_categories(include_inactive: bool = Query(default=True)):
+    return {"items": admin_repository.list_categories(include_inactive=include_inactive)}
+
+
+@router.post("/api/admin/categories")
+def create_category(payload: CategoryPayload):
+    category_id = admin_repository.create_category(
+        code=payload.code,
+        name=payload.name,
+        description=payload.description,
+        display_order=payload.display_order,
+        routing_hint=payload.routing_hint,
+        prompt_hint=payload.prompt_hint,
+        retrieval_scope=payload.retrieval_scope or {},
+        is_active=payload.is_active,
+    )
+    return {"ok": True, "category_id": category_id}
+
+
+@router.put("/api/admin/categories/{category_id}")
+def update_category(category_id: int, payload: CategoryPayload):
+    ok = admin_repository.update_category(
+        category_id,
+        {
+            "code": payload.code,
+            "name": payload.name,
+            "description": payload.description,
+            "display_order": payload.display_order,
+            "is_active": payload.is_active,
+            "routing_hint": payload.routing_hint,
+            "prompt_hint": payload.prompt_hint,
+            "retrieval_scope": payload.retrieval_scope or {},
+        },
+    )
+    if not ok:
+        raise HTTPException(status_code=404, detail="Category not found")
+    return {"ok": True}
+
+
+@router.post("/api/admin/categories/{category_id}/archive")
+def archive_category(category_id: int):
+    ok = admin_repository.archive_category(category_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Category not found")
+    return {"ok": True}
+
+
+@router.get("/api/admin/categories/{category_id}/synonyms")
+def list_category_synonyms(category_id: int):
+    return {"items": admin_repository.list_category_synonyms(category_id)}
+
+
+@router.post("/api/admin/categories/{category_id}/synonyms")
+def add_category_synonym(category_id: int, payload: CategorySynonymPayload):
+    try:
+        synonym_id = admin_repository.add_category_synonym(category_id, payload.synonym)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"ok": True, "synonym_id": synonym_id}
+
+
+@router.get("/api/admin/categories/stats")
+def categories_stats():
+    return admin_repository.category_statistics()
 
 
 @router.get("/api/admin/data-sources")

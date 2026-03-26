@@ -12,7 +12,7 @@ from app.core.schemas import AskRequest
 from app.core.pipeline import QAPipeline, normalize_question_text
 from app.core.config import PDF_DIR, INDEX_DIR
 from app.core.admin_store import AdminStore
-from app.core.category_utils import infer_category
+from app.services.categories_service import CategoriesService
 
 from app.api.admin_api import router as admin_router
 from app.api.user_feedback_api import router as feedback_router
@@ -26,6 +26,7 @@ app.include_router(feedback_router)
 app.include_router(unresolved_category_router)
 
 store = AdminStore()
+categories_service = CategoriesService(store)
 REFUSAL_TEXT = "The answer is not available in the approved document set."
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -196,12 +197,13 @@ def ask(payload: AskRequest):
                 },
             }
 
-        result = get_pipeline().ask(question)
+        routed_category = categories_service.predict_from_question(question)
+        result = get_pipeline().ask(question, category_hint_override=routed_category)
 
-        predicted_category = infer_category(
+        predicted_category = categories_service.infer(
             question,
             result.get("citations", []),
-            None,
+            routed_category,
         )
 
         answer_text = (result.get("answer") or "").strip()

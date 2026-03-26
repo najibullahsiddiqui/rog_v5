@@ -1,5 +1,7 @@
 from app.schemas.admin import (
     AdminRecordSchema,
+    CategoryPayload,
+    CategorySynonymPayload,
     DataSourceCreatePayload,
     DataSourceStatusPayload,
     ExpertAnswerPayload,
@@ -21,6 +23,8 @@ __all__ = [
     "APIResponseSchema",
     "AdminErrorSchema",
     "AdminRecordSchema",
+    "CategoryPayload",
+    "CategorySynonymPayload",
     "AskRequest",
     "AskResponse",
     "CitationSchema",

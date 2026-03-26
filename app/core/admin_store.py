@@ -101,6 +101,7 @@ class AdminStore:
             apply_v2_schema(conn)
             self._ensure_data_source_columns(conn)
             self._ensure_qna_pair_columns(conn)
+            self._ensure_category_columns(conn)
 
     def _ensure_data_source_columns(self, conn: sqlite3.Connection) -> None:
         if not self._table_exists(conn, "data_sources"):
@@ -133,6 +134,30 @@ class AdminStore:
         if not self._column_exists(conn, "qna_pairs", "priority"):
             conn.execute(
                 "ALTER TABLE qna_pairs ADD COLUMN priority INTEGER DEFAULT 0"
+            )
+
+    def _ensure_category_columns(self, conn: sqlite3.Connection) -> None:
+        if not self._table_exists(conn, "categories"):
+            return
+
+        if not self._column_exists(conn, "categories", "display_order"):
+            conn.execute(
+                "ALTER TABLE categories ADD COLUMN display_order INTEGER DEFAULT 0"
+            )
+
+        if not self._column_exists(conn, "categories", "routing_hint"):
+            conn.execute(
+                "ALTER TABLE categories ADD COLUMN routing_hint TEXT"
+            )
+
+        if not self._column_exists(conn, "categories", "prompt_hint"):
+            conn.execute(
+                "ALTER TABLE categories ADD COLUMN prompt_hint TEXT"
+            )
+
+        if not self._column_exists(conn, "categories", "retrieval_scope_json"):
+            conn.execute(
+                "ALTER TABLE categories ADD COLUMN retrieval_scope_json TEXT"
             )
 
     def _ensure_default_pdf_source(self, conn: sqlite3.Connection) -> int | None:
@@ -362,6 +387,162 @@ class AdminStore:
             (code, name or code.title(), description),
         )
         return int(cur.lastrowid)
+
+    def list_categories(self, include_inactive: bool = True) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            self._ensure_category_columns(conn)
+            query = """
+                SELECT
+                    c.id,
+                    c.code,
+                    c.name,
+                    c.description,
+                    c.is_active,
+                    COALESCE(c.display_order, 0) AS display_order,
+                    c.routing_hint,
+                    c.prompt_hint,
+                    c.retrieval_scope_json,
+                    c.created_at,
+                    c.updated_at,
+                    COUNT(DISTINCT s.id) AS synonyms_count
+                FROM categories c
+                LEFT JOIN category_synonyms s ON s.category_id = c.id
+            """
+            if not include_inactive:
+                query += " WHERE c.is_active=1"
+
+            query += """
+                GROUP BY c.id
+                ORDER BY c.is_active DESC, COALESCE(c.display_order, 0) ASC, c.name ASC
+            """
+            rows = conn.execute(query).fetchall()
+            items = [dict(r) for r in rows]
+            for item in items:
+                item["retrieval_scope"] = json.loads(item.get("retrieval_scope_json") or "{}")
+            return items
+
+    def create_category(
+        self,
+        *,
+        code: str,
+        name: str,
+        description: str | None = None,
+        display_order: int = 0,
+        routing_hint: str | None = None,
+        prompt_hint: str | None = None,
+        retrieval_scope: dict[str, Any] | None = None,
+        is_active: bool = True,
+    ) -> int:
+        code = normalize_question_text(code).replace(" ", "_")
+        with self._conn() as conn:
+            self._ensure_category_columns(conn)
+            cur = conn.execute(
+                """
+                INSERT INTO categories(
+                    code, name, description, is_active, display_order, routing_hint, prompt_hint, retrieval_scope_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    code,
+                    name.strip(),
+                    description,
+                    1 if is_active else 0,
+                    int(display_order),
+                    routing_hint,
+                    prompt_hint,
+                    json.dumps(retrieval_scope or {}, ensure_ascii=False),
+                ),
+            )
+            return int(cur.lastrowid)
+
+    def update_category(self, category_id: int, payload: dict[str, Any]) -> bool:
+        with self._conn() as conn:
+            self._ensure_category_columns(conn)
+            cur = conn.execute(
+                """
+                UPDATE categories
+                SET code=?,
+                    name=?,
+                    description=?,
+                    is_active=?,
+                    display_order=?,
+                    routing_hint=?,
+                    prompt_hint=?,
+                    retrieval_scope_json=?,
+                    updated_at=CURRENT_TIMESTAMP
+                WHERE id=?
+                """,
+                (
+                    normalize_question_text(str(payload.get("code") or "")).replace(" ", "_"),
+                    str(payload.get("name") or "").strip(),
+                    str(payload.get("description") or "") or None,
+                    1 if payload.get("is_active", True) else 0,
+                    int(payload.get("display_order") or 0),
+                    str(payload.get("routing_hint") or "") or None,
+                    str(payload.get("prompt_hint") or "") or None,
+                    json.dumps(payload.get("retrieval_scope") or {}, ensure_ascii=False),
+                    category_id,
+                ),
+            )
+            return cur.rowcount > 0
+
+    def archive_category(self, category_id: int) -> bool:
+        with self._conn() as conn:
+            cur = conn.execute(
+                "UPDATE categories SET is_active=0, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (category_id,),
+            )
+            return cur.rowcount > 0
+
+    def list_category_synonyms(self, category_id: int) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, category_id, synonym, normalized_synonym, created_at
+                FROM category_synonyms
+                WHERE category_id=?
+                ORDER BY synonym ASC
+                """,
+                (category_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def add_category_synonym(self, category_id: int, synonym: str) -> int:
+        synonym = (synonym or "").strip()
+        if not synonym:
+            raise ValueError("synonym is required")
+        with self._conn() as conn:
+            cur = conn.execute(
+                """
+                INSERT OR IGNORE INTO category_synonyms(category_id, synonym, normalized_synonym)
+                VALUES (?, ?, ?)
+                """,
+                (category_id, synonym, normalize_question_text(synonym)),
+            )
+            return int(cur.lastrowid or 0)
+
+    def category_statistics(self) -> dict[str, Any]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    c.id,
+                    c.code,
+                    c.name,
+                    c.is_active,
+                    COUNT(DISTINCT q.id) AS qna_pairs_total,
+                    SUM(CASE WHEN q.status='active' THEN 1 ELSE 0 END) AS qna_active,
+                    SUM(CASE WHEN q.status='archived' THEN 1 ELSE 0 END) AS qna_archived,
+                    COUNT(DISTINCT uq.id) AS unresolved_total
+                FROM categories c
+                LEFT JOIN qna_pairs q ON q.category_id = c.id
+                LEFT JOIN unresolved_queries uq ON uq.category = c.code
+                GROUP BY c.id
+                ORDER BY COALESCE(c.display_order, 0) ASC, c.name ASC
+                """
+            ).fetchall()
+            return {"items": [dict(r) for r in rows]}
 
     def import_categories(self, records: list[dict[str, Any]]) -> tuple[int, list[str]]:
         errors: list[str] = []
