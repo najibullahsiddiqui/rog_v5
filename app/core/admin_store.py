@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import time
 from difflib import SequenceMatcher
@@ -829,12 +830,7 @@ class AdminStore:
                 (tree_id, current_node_key),
             ).fetchall()
 
-            selected_edge = None
-            for e in edges:
-                condition_value = str(e["condition_value"] or "").strip().lower()
-                if condition_value and condition_value in q:
-                    selected_edge = e
-                    break
+            selected_edge = self._best_matching_edge(edges, q)
             if not selected_edge and edges:
                 selected_edge = edges[0]
 
@@ -880,6 +876,57 @@ class AdminStore:
                 "outcome_value": outcome_value,
                 "answer_text": str(next_node["answer_text"] or ""),
             }
+
+    def _normalize_for_match(self, text: str) -> str:
+        return normalize_question_text(re.sub(r"[/|,;]+", " ", text or "")).strip()
+
+    def _token_overlap_score(self, a: str, b: str) -> float:
+        a_tokens = {t for t in self._normalize_for_match(a).split() if t}
+        b_tokens = {t for t in self._normalize_for_match(b).split() if t}
+        if not a_tokens or not b_tokens:
+            return 0.0
+        return len(a_tokens & b_tokens) / max(1, len(a_tokens | b_tokens))
+
+    def _edge_match_score(self, condition_value: str, user_text: str) -> float:
+        cond = self._normalize_for_match(condition_value)
+        query = self._normalize_for_match(user_text)
+        if not cond or not query:
+            return 0.0
+
+        if query == cond:
+            return 1.0
+        if query.startswith(cond) or query.endswith(cond):
+            return 0.94
+        if cond in query:
+            return 0.88
+
+        cond_parts = [p.strip() for p in re.split(r"\bor\b|/|\|", condition_value, flags=re.IGNORECASE) if p.strip()]
+        if any(self._normalize_for_match(part) == query for part in cond_parts):
+            return 0.96
+        if any(self._normalize_for_match(part) in query for part in cond_parts):
+            return 0.9
+
+        overlap = self._token_overlap_score(cond, query)
+        fuzzy = SequenceMatcher(None, cond, query).ratio()
+        return max(overlap * 0.9, fuzzy * 0.85)
+
+    def _best_matching_edge(self, edges: list[sqlite3.Row], user_text: str) -> sqlite3.Row | None:
+        best = None
+        best_score = 0.0
+        for e in edges:
+            cond = str(e["condition_value"] or "").strip()
+            if not cond:
+                continue
+            score = self._edge_match_score(cond, user_text)
+            priority_boost = min(0.05, max(0.0, float(e["priority"] or 0) * 0.005))
+            score += priority_boost
+            if score > best_score:
+                best_score = score
+                best = e
+
+        if best_score >= 0.35:
+            return best
+        return None
 
     def import_categories(self, records: list[dict[str, Any]]) -> tuple[int, list[str]]:
         errors: list[str] = []
