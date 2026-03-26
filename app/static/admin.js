@@ -82,6 +82,16 @@ const treeNodesJsonInput = document.getElementById("treeNodesJsonInput");
 const treeEdgesJsonInput = document.getElementById("treeEdgesJsonInput");
 const treeSaveBtn = document.getElementById("treeSaveBtn");
 const treeClearBtn = document.getElementById("treeClearBtn");
+const trainBotRefreshBtn = document.getElementById("trainBotRefreshBtn");
+const trainBotQueueTable = document.getElementById("trainBotQueueTable");
+const trainBotJobsTable = document.getElementById("trainBotJobsTable");
+const trainBotAuditTable = document.getElementById("trainBotAuditTable");
+const trainBotActionPromoteExpertBtn = document.getElementById("trainBotActionPromoteExpertBtn");
+const trainBotActionPromoteQnaBtn = document.getElementById("trainBotActionPromoteQnaBtn");
+const trainBotActionResolveWrongBtn = document.getElementById("trainBotActionResolveWrongBtn");
+const trainBotActionReindexBtn = document.getElementById("trainBotActionReindexBtn");
+const trainBotActionCategoryRefreshBtn = document.getElementById("trainBotActionCategoryRefreshBtn");
+const trainBotActionThresholdRefreshBtn = document.getElementById("trainBotActionThresholdRefreshBtn");
 
 const expertModal = document.getElementById("expertModal");
 const modalOverlay = document.getElementById("modalOverlay");
@@ -116,6 +126,10 @@ const state = {
   categories: [],
   categorySynonyms: [],
   decisionTrees: [],
+  trainBotQueue: [],
+  trainBotJobs: [],
+  trainBotAudit: [],
+  trainBotSelected: null,
 };
 
 function escapeHtml(text) {
@@ -452,6 +466,128 @@ async function loadFeedback() {
   const data = await res.json();
   state.feedbackItems = data.items || [];
   renderFeedbackTables();
+}
+
+function buildTrainBotQueueTable(items) {
+  if (!items.length) return `<div class="empty-state">No unresolved or wrong-answer items in queue.</div>`;
+  return `
+    <table class="admin-table">
+      <thead><tr><th>Pick</th><th>Type</th><th>ID</th><th>Category</th><th>Question</th><th>Detail</th><th>Repeats</th><th>Suggested actions</th><th>Created</th></tr></thead>
+      <tbody>
+        ${items.map((item) => `
+          <tr class="${state.trainBotSelected && Number(state.trainBotSelected.id) === Number(item.id) && state.trainBotSelected.queue_type === item.queue_type ? "active-row" : ""}">
+            <td><button class="action-btn" onclick="selectTrainBotItem('${escapeHtml(item.queue_type)}', ${Number(item.id)})">Select</button></td>
+            <td>${escapeHtml(item.queue_type)}</td>
+            <td>${escapeHtml(item.id)}</td>
+            <td>${escapeHtml(item.category || "unassigned")}</td>
+            <td class="question-cell">${escapeHtml(item.question || "")}</td>
+            <td>${escapeHtml(item.detail || "—")}</td>
+            <td>${escapeHtml(item.repeat_count || 1)}</td>
+            <td>${escapeHtml((item.suggested_actions || []).join(", "))}</td>
+            <td>${escapeHtml(item.created_at || "")}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function buildTrainBotJobsTable(items) {
+  if (!items.length) return `<div class="empty-state">No training jobs yet.</div>`;
+  return `
+    <table class="admin-table">
+      <thead><tr><th>ID</th><th>Type</th><th>Status</th><th>Started</th><th>Finished</th><th>Result</th><th>Error</th></tr></thead>
+      <tbody>
+      ${items.map((j) => `
+        <tr>
+          <td>${escapeHtml(j.id)}</td>
+          <td>${escapeHtml(j.job_type)}</td>
+          <td>${escapeHtml(j.status)}</td>
+          <td>${escapeHtml(j.started_at || "—")}</td>
+          <td>${escapeHtml(j.finished_at || "—")}</td>
+          <td><pre>${escapeHtml(JSON.stringify(j.result || {}, null, 2))}</pre></td>
+          <td>${escapeHtml(j.error_text || "—")}</td>
+        </tr>
+      `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function buildTrainBotAuditTable(items) {
+  if (!items.length) return `<div class="empty-state">No audit entries yet.</div>`;
+  return `
+    <table class="admin-table">
+      <thead><tr><th>ID</th><th>Action</th><th>Entity</th><th>Entity ID</th><th>Metadata</th><th>Created</th></tr></thead>
+      <tbody>
+      ${items.map((a) => `
+        <tr>
+          <td>${escapeHtml(a.id)}</td>
+          <td>${escapeHtml(a.action)}</td>
+          <td>${escapeHtml(a.entity_type)}</td>
+          <td>${escapeHtml(a.entity_id || "—")}</td>
+          <td><pre>${escapeHtml(JSON.stringify(a.metadata || {}, null, 2))}</pre></td>
+          <td>${escapeHtml(a.created_at || "")}</td>
+        </tr>
+      `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderTrainBotHub() {
+  if (trainBotQueueTable) trainBotQueueTable.innerHTML = buildTrainBotQueueTable(state.trainBotQueue || []);
+  if (trainBotJobsTable) trainBotJobsTable.innerHTML = buildTrainBotJobsTable(state.trainBotJobs || []);
+  if (trainBotAuditTable) trainBotAuditTable.innerHTML = buildTrainBotAuditTable(state.trainBotAudit || []);
+}
+
+async function loadTrainBotHub() {
+  const [queueRes, jobsRes, auditRes] = await Promise.all([
+    fetch("/api/admin/train-bot/queue?limit=200"),
+    fetch("/api/admin/train-bot/jobs?limit=50"),
+    fetch("/api/admin/train-bot/audit?limit=100"),
+  ]);
+  const [queueData, jobsData, auditData] = await Promise.all([queueRes.json(), jobsRes.json(), auditRes.json()]);
+  state.trainBotQueue = queueData.items || [];
+  state.trainBotJobs = jobsData.items || [];
+  state.trainBotAudit = auditData.items || [];
+  if (state.trainBotSelected) {
+    state.trainBotSelected = state.trainBotQueue.find(
+      (x) => Number(x.id) === Number(state.trainBotSelected.id) && x.queue_type === state.trainBotSelected.queue_type
+    ) || null;
+  }
+  renderTrainBotHub();
+}
+
+function selectedTrainBotItem() {
+  if (!state.trainBotSelected) {
+    alert("Select a queue item first.");
+    return null;
+  }
+  return state.trainBotSelected;
+}
+
+async function runTrainBotAction(path, payload = {}) {
+  const options = { method: "POST" };
+  if (payload !== null) {
+    options.headers = { "Content-Type": "application/json" };
+    options.body = JSON.stringify(payload);
+  }
+  const res = await fetch(path, options);
+  const data = await res.json();
+  if (!res.ok || data.ok === false) {
+    alert(data.detail || data.message || "Train Bot action failed.");
+    return null;
+  }
+  await loadTrainBotHub();
+  await refreshAll();
+  return data;
+}
+
+function selectTrainBotItem(queueType, id) {
+  const item = (state.trainBotQueue || []).find((x) => x.queue_type === queueType && Number(x.id) === Number(id));
+  state.trainBotSelected = item || null;
+  renderTrainBotHub();
 }
 
 function buildQnaPairsTable(items) {
@@ -1200,12 +1336,93 @@ async function saveExpertAnswer() {
   }
 }
 
+async function trainBotPromoteExpert() {
+  const item = selectedTrainBotItem();
+  if (!item || item.queue_type !== "unresolved") {
+    alert("Select an unresolved queue item.");
+    return;
+  }
+  const category = (prompt("Category code for expert answer:", item.category || "patent") || "").trim();
+  const expertAnswer = (prompt("Corrected expert answer:") || "").trim();
+  if (!category || !expertAnswer) {
+    alert("Category and expert answer are required.");
+    return;
+  }
+  await runTrainBotAction("/api/admin/train-bot/actions/promote-expert", {
+    unresolved_query_id: Number(item.id),
+    category,
+    expert_answer: expertAnswer,
+    source_note: "train_bot_promote_expert",
+  });
+}
+
+async function trainBotPromoteQna() {
+  const item = selectedTrainBotItem();
+  if (!item) return;
+  const answer = (prompt("Answer to store in Q&A pair:", item.answer_text || "") || "").trim();
+  if (!answer) {
+    alert("Answer is required.");
+    return;
+  }
+  const categoryCode = (prompt("Category code (optional):", item.category || "") || "").trim();
+  const sourceItemType = item.queue_type === "unresolved" ? "unresolved_queries" : "wrong_answer_reports";
+  await runTrainBotAction("/api/admin/train-bot/actions/promote-qna", {
+    source_item_type: sourceItemType,
+    source_item_id: Number(item.id),
+    question: item.question || "",
+    answer,
+    category_code: categoryCode || null,
+    source_note: "train_bot_promote_qna",
+  });
+}
+
+async function trainBotResolveWrongReport() {
+  const item = selectedTrainBotItem();
+  if (!item || item.queue_type !== "wrong_answer") {
+    alert("Select a wrong-answer queue item.");
+    return;
+  }
+  const adminAction = (prompt("Admin action summary:", "reviewed_and_corrected") || "").trim();
+  const actionNotes = (prompt("Action notes:", "") || "").trim();
+  if (!adminAction) {
+    alert("Admin action is required.");
+    return;
+  }
+  await runTrainBotAction("/api/admin/train-bot/actions/resolve-wrong-answer", {
+    report_id: Number(item.id),
+    admin_action: adminAction,
+    action_notes: actionNotes || null,
+  });
+}
+
+async function trainBotTriggerReindex() {
+  const sourceId = Number(prompt("Data source ID to reindex:", String(state.activeSourceId || 1)) || 0);
+  if (!sourceId) return;
+  await runTrainBotAction("/api/admin/train-bot/actions/source-reindex", { data_source_id: sourceId });
+}
+
+async function trainBotCategoryRefresh() {
+  const item = state.trainBotSelected;
+  const categoryCode = (prompt("Category code to refresh (optional):", item?.category || "") || "").trim();
+  await runTrainBotAction("/api/admin/train-bot/actions/category-refresh", {
+    category_code: categoryCode || null,
+  });
+}
+
+async function trainBotThresholdRefresh() {
+  const data = await runTrainBotAction("/api/admin/train-bot/actions/threshold-refresh", null);
+  if (data && data.ok === false) {
+    alert(data.message || "Threshold refresh skipped.");
+  }
+}
+
 async function refreshAll() {
   refreshBtn.disabled = true;
   refreshBtn.innerHTML = `<span>↻</span><span>Refreshing...</span>`;
 
   try {
     await Promise.all([loadSummary(), loadUnresolved(), loadFeedback(), loadDataSources(), loadQnaPairs(), loadCategories(), loadDecisionTrees()]);
+    await loadTrainBotHub();
   } catch (error) {
     console.error(error);
     alert("Failed to load dashboard data.");
@@ -1310,6 +1527,7 @@ window.archiveCategory = archiveCategory;
 window.loadCategorySynonyms = loadCategorySynonyms;
 window.editDecisionTree = editDecisionTree;
 window.deleteDecisionTree = deleteDecisionTree;
+window.selectTrainBotItem = selectTrainBotItem;
 
 refreshBtn.addEventListener("click", refreshAll);
 
@@ -1333,6 +1551,13 @@ if (categoryAddSynonymBtn) categoryAddSynonymBtn.addEventListener("click", addCa
 if (treesRefreshBtn) treesRefreshBtn.addEventListener("click", loadDecisionTrees);
 if (treeSaveBtn) treeSaveBtn.addEventListener("click", saveDecisionTree);
 if (treeClearBtn) treeClearBtn.addEventListener("click", clearDecisionTreeForm);
+if (trainBotRefreshBtn) trainBotRefreshBtn.addEventListener("click", loadTrainBotHub);
+if (trainBotActionPromoteExpertBtn) trainBotActionPromoteExpertBtn.addEventListener("click", trainBotPromoteExpert);
+if (trainBotActionPromoteQnaBtn) trainBotActionPromoteQnaBtn.addEventListener("click", trainBotPromoteQna);
+if (trainBotActionResolveWrongBtn) trainBotActionResolveWrongBtn.addEventListener("click", trainBotResolveWrongReport);
+if (trainBotActionReindexBtn) trainBotActionReindexBtn.addEventListener("click", trainBotTriggerReindex);
+if (trainBotActionCategoryRefreshBtn) trainBotActionCategoryRefreshBtn.addEventListener("click", trainBotCategoryRefresh);
+if (trainBotActionThresholdRefreshBtn) trainBotActionThresholdRefreshBtn.addEventListener("click", trainBotThresholdRefresh);
 if (jsonFileInput) {
   jsonFileInput.addEventListener("change", async (event) => {
     const file = event.target.files && event.target.files[0];

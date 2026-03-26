@@ -17,6 +17,11 @@ from app.schemas import (
     ExpertAnswerPayload,
     JsonConvertPayload,
     QnaPairPayload,
+    TrainBotCategoryRefreshPayload,
+    TrainBotPromoteExpertPayload,
+    TrainBotPromoteQnaPayload,
+    TrainBotReindexPayload,
+    TrainBotResolveWrongAnswerPayload,
     DecisionTreePayload,
 )
 from app.services import AnalyticsService, CategoriesService, ExpertAnswersService
@@ -78,6 +83,83 @@ def get_unresolved(
 def get_feedback(category: str | None = Query(default=None)):
     norm = categories_service.normalize(category) if category else None
     return {"items": admin_repository.list_feedback(norm)}
+
+
+@router.get("/api/admin/train-bot/queue")
+def train_bot_queue(limit: int = Query(default=200, ge=1, le=500)):
+    return {"items": admin_repository.get_train_bot_queue(limit=limit)}
+
+
+@router.get("/api/admin/train-bot/jobs")
+def train_bot_jobs(limit: int = Query(default=50, ge=1, le=200)):
+    return {"items": admin_repository.list_training_jobs(limit=limit)}
+
+
+@router.get("/api/admin/train-bot/audit")
+def train_bot_audit(limit: int = Query(default=100, ge=1, le=500)):
+    return {"items": admin_repository.list_audit_logs(limit=limit)}
+
+
+@router.post("/api/admin/train-bot/actions/promote-expert")
+def train_bot_promote_expert(payload: TrainBotPromoteExpertPayload):
+    category = categories_service.normalize(payload.category)
+    if not category:
+        raise HTTPException(status_code=400, detail="Invalid category")
+    result = admin_repository.promote_unresolved_to_expert(
+        unresolved_query_id=payload.unresolved_query_id,
+        category=category,
+        expert_answer=payload.expert_answer,
+        source_note=payload.source_note,
+    )
+    return {"ok": True, **result}
+
+
+@router.post("/api/admin/train-bot/actions/promote-qna")
+def train_bot_promote_qna(payload: TrainBotPromoteQnaPayload):
+    source_item_type = (payload.source_item_type or "").strip()
+    if source_item_type not in {"unresolved_queries", "wrong_answer_reports", "user_feedback"}:
+        raise HTTPException(status_code=400, detail="Invalid source_item_type")
+    result = admin_repository.promote_to_qna_pair(
+        source_item_type=source_item_type,
+        source_item_id=payload.source_item_id,
+        question=payload.question,
+        answer=payload.answer,
+        category_code=categories_service.normalize(payload.category_code) if payload.category_code else None,
+        source_note=payload.source_note,
+    )
+    return {"ok": True, **result}
+
+
+@router.post("/api/admin/train-bot/actions/source-reindex")
+def train_bot_source_reindex(payload: TrainBotReindexPayload):
+    result = admin_repository.trigger_source_reindex_training(payload.data_source_id)
+    return {"ok": True, **result}
+
+
+@router.post("/api/admin/train-bot/actions/category-refresh")
+def train_bot_category_refresh(payload: TrainBotCategoryRefreshPayload):
+    result = admin_repository.trigger_category_refresh_training(
+        categories_service.normalize(payload.category_code) if payload.category_code else None
+    )
+    return {"ok": True, **result}
+
+
+@router.post("/api/admin/train-bot/actions/threshold-refresh")
+def train_bot_threshold_refresh():
+    result = admin_repository.trigger_threshold_refresh_training()
+    if not result.get("ok", True):
+        return result
+    return {"ok": True, **result}
+
+
+@router.post("/api/admin/train-bot/actions/resolve-wrong-answer")
+def train_bot_resolve_wrong_answer(payload: TrainBotResolveWrongAnswerPayload):
+    result = admin_repository.resolve_wrong_answer_report(
+        report_id=payload.report_id,
+        admin_action=payload.admin_action,
+        action_notes=payload.action_notes,
+    )
+    return {"ok": True, **result}
 
 
 @router.get("/api/admin/categories")

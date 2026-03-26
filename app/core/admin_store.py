@@ -1674,6 +1674,370 @@ class AdminStore:
             items.append(item)
         return items
 
+    def _insert_audit_log(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        action: str,
+        entity_type: str,
+        entity_id: str | int | None = None,
+        metadata: dict[str, Any] | None = None,
+        actor_type: str = "admin",
+        actor_id: str = "web",
+    ) -> int:
+        cur = conn.execute(
+            """
+            INSERT INTO audit_logs (actor_type, actor_id, action, entity_type, entity_id, metadata_json)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                actor_type,
+                actor_id,
+                action,
+                entity_type,
+                str(entity_id) if entity_id is not None else None,
+                json.dumps(metadata or {}, ensure_ascii=False),
+            ),
+        )
+        return int(cur.lastrowid)
+
+    def create_training_job(
+        self,
+        *,
+        job_type: str,
+        params: dict[str, Any] | None = None,
+        requested_by: str = "admin:web",
+    ) -> int:
+        with self._conn() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO training_jobs (job_type, status, requested_by, started_at, params_json)
+                VALUES (?, 'running', ?, CURRENT_TIMESTAMP, ?)
+                """,
+                (job_type, requested_by, json.dumps(params or {}, ensure_ascii=False)),
+            )
+            return int(cur.lastrowid)
+
+    def complete_training_job(self, job_id: int, result: dict[str, Any] | None = None) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                """
+                UPDATE training_jobs
+                SET status='completed',
+                    finished_at=CURRENT_TIMESTAMP,
+                    result_json=?,
+                    updated_at=CURRENT_TIMESTAMP
+                WHERE id=?
+                """,
+                (json.dumps(result or {}, ensure_ascii=False), job_id),
+            )
+
+    def fail_training_job(self, job_id: int, error_text: str) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                """
+                UPDATE training_jobs
+                SET status='failed',
+                    finished_at=CURRENT_TIMESTAMP,
+                    error_text=?,
+                    updated_at=CURRENT_TIMESTAMP
+                WHERE id=?
+                """,
+                (error_text, job_id),
+            )
+
+    def list_training_jobs(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    id, job_type, status, requested_by,
+                    started_at, finished_at, params_json, result_json, error_text, created_at, updated_at
+                FROM training_jobs
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (max(1, min(limit, 200)),),
+            ).fetchall()
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["params"] = json.loads(item.get("params_json") or "{}")
+            item["result"] = json.loads(item.get("result_json") or "{}")
+            items.append(item)
+        return items
+
+    def list_audit_logs(self, limit: int = 100) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, actor_type, actor_id, action, entity_type, entity_id, metadata_json, created_at
+                FROM audit_logs
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (max(1, min(limit, 500)),),
+            ).fetchall()
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["metadata"] = json.loads(item.get("metadata_json") or "{}")
+            items.append(item)
+        return items
+
+    def get_train_bot_queue(self, limit: int = 200) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            unresolved_rows = conn.execute(
+                """
+                SELECT
+                    id,
+                    'unresolved' AS queue_type,
+                    question,
+                    normalized_question,
+                    COALESCE(user_selected_category, category) AS category,
+                    answer_text,
+                    reason AS detail,
+                    status,
+                    created_at,
+                    (
+                      SELECT COUNT(*)
+                      FROM unresolved_queries uq2
+                      WHERE uq2.normalized_question = uq.normalized_question
+                    ) AS repeat_count
+                FROM unresolved_queries uq
+                WHERE status='open'
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+
+            wrong_rows: list[sqlite3.Row] = []
+            if self._table_exists(conn, "wrong_answer_reports"):
+                wrong_rows = conn.execute(
+                    """
+                    SELECT
+                        wr.id,
+                        'wrong_answer' AS queue_type,
+                        COALESCE(uf.question, cm.question_text, '') AS question,
+                        COALESCE(uf.normalized_question, cm.normalized_question, '') AS normalized_question,
+                        uf.category AS category,
+                        COALESCE(uf.answer_text, cm.answer_text, '') AS answer_text,
+                        COALESCE(wr.report_text, wr.reason_code, '') AS detail,
+                        wr.status AS status,
+                        wr.created_at AS created_at,
+                        1 AS repeat_count
+                    FROM wrong_answer_reports wr
+                    LEFT JOIN user_feedback uf ON uf.id = wr.feedback_id
+                    LEFT JOIN chat_messages cm ON cm.id = wr.message_id
+                    WHERE wr.status='open'
+                    ORDER BY wr.id DESC
+                    LIMIT ?
+                    """,
+                    (limit,),
+                ).fetchall()
+
+        items = [dict(r) for r in unresolved_rows] + [dict(r) for r in wrong_rows]
+        items.sort(key=lambda x: str(x.get("created_at") or ""), reverse=True)
+        for item in items:
+            suggestions = ["promote_to_expert", "trigger_category_refresh"]
+            if int(item.get("repeat_count") or 1) >= 2:
+                suggestions.insert(1, "promote_to_qna")
+            if item.get("queue_type") == "wrong_answer":
+                suggestions.append("trigger_threshold_refresh")
+            item["suggested_actions"] = suggestions
+        return items[:limit]
+
+    def promote_unresolved_to_expert(
+        self,
+        *,
+        unresolved_query_id: int,
+        category: str,
+        expert_answer: str,
+        source_note: str | None = None,
+    ) -> dict[str, Any]:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT question, normalized_question FROM unresolved_queries WHERE id=?",
+                (unresolved_query_id,),
+            ).fetchone()
+            if not row:
+                raise ValueError("Unresolved item not found")
+
+        job_id = self.create_training_job(
+            job_type="category_refresh",
+            params={"workflow": "promote_to_expert", "unresolved_query_id": unresolved_query_id},
+        )
+        try:
+            expert_id = self.save_expert_answer(
+                question=str(row["question"] or ""),
+                normalized_question=str(row["normalized_question"] or ""),
+                category=category,
+                expert_answer=expert_answer,
+                source_note=source_note,
+                unresolved_query_id=unresolved_query_id,
+            )
+            with self._conn() as conn:
+                audit_id = self._insert_audit_log(
+                    conn,
+                    action="promote_to_expert",
+                    entity_type="unresolved_queries",
+                    entity_id=unresolved_query_id,
+                    metadata={"expert_answer_id": expert_id, "training_job_id": job_id},
+                )
+            self.complete_training_job(job_id, {"expert_answer_id": expert_id, "audit_log_id": audit_id})
+            return {"training_job_id": job_id, "expert_answer_id": expert_id, "audit_log_id": audit_id}
+        except Exception as exc:
+            self.fail_training_job(job_id, str(exc))
+            raise
+
+    def promote_to_qna_pair(
+        self,
+        *,
+        question: str,
+        answer: str,
+        category_code: str | None = None,
+        source_note: str | None = None,
+        source_item_type: str,
+        source_item_id: int | None = None,
+    ) -> dict[str, Any]:
+        job_id = self.create_training_job(
+            job_type="promote_qna",
+            params={
+                "workflow": "promote_to_qna",
+                "source_item_type": source_item_type,
+                "source_item_id": source_item_id,
+            },
+        )
+        try:
+            qna_pair_id = self.create_qna_pair(
+                question=question,
+                answer=answer,
+                category_code=category_code,
+                source_note=source_note,
+                is_exact_eligible=True,
+                is_semantic_eligible=True,
+                approval_status="approved",
+                priority=10,
+            )
+            with self._conn() as conn:
+                audit_id = self._insert_audit_log(
+                    conn,
+                    action="promote_to_qna",
+                    entity_type=source_item_type,
+                    entity_id=source_item_id,
+                    metadata={"qna_pair_id": qna_pair_id, "training_job_id": job_id},
+                )
+                if source_item_type == "unresolved_queries" and source_item_id:
+                    conn.execute(
+                        "UPDATE unresolved_queries SET status='resolved', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                        (source_item_id,),
+                    )
+            self.complete_training_job(job_id, {"qna_pair_id": qna_pair_id, "audit_log_id": audit_id})
+            return {"training_job_id": job_id, "qna_pair_id": qna_pair_id, "audit_log_id": audit_id}
+        except Exception as exc:
+            self.fail_training_job(job_id, str(exc))
+            raise
+
+    def trigger_source_reindex_training(self, data_source_id: int) -> dict[str, Any]:
+        job_id = self.create_training_job(
+            job_type="reindex",
+            params={"workflow": "source_reindex", "data_source_id": data_source_id},
+        )
+        try:
+            ingestion_job_id = self.queue_reingest(data_source_id, trigger_type="train_bot")
+            with self._conn() as conn:
+                audit_id = self._insert_audit_log(
+                    conn,
+                    action="trigger_source_reindex",
+                    entity_type="data_sources",
+                    entity_id=data_source_id,
+                    metadata={"ingestion_job_id": ingestion_job_id, "training_job_id": job_id},
+                )
+            self.complete_training_job(job_id, {"ingestion_job_id": ingestion_job_id, "audit_log_id": audit_id})
+            return {"training_job_id": job_id, "ingestion_job_id": ingestion_job_id, "audit_log_id": audit_id}
+        except Exception as exc:
+            self.fail_training_job(job_id, str(exc))
+            raise
+
+    def trigger_category_refresh_training(self, category_code: str | None = None) -> dict[str, Any]:
+        job_id = self.create_training_job(
+            job_type="category_refresh",
+            params={"workflow": "category_refresh", "category_code": category_code},
+        )
+        with self._conn() as conn:
+            metadata = {"category_code": category_code, "status": "completed_noop"}
+            audit_id = self._insert_audit_log(
+                conn,
+                action="trigger_category_refresh",
+                entity_type="categories",
+                entity_id=category_code,
+                metadata=metadata | {"training_job_id": job_id},
+            )
+        self.complete_training_job(job_id, {"audit_log_id": audit_id, **metadata})
+        return {"training_job_id": job_id, "audit_log_id": audit_id, **metadata}
+
+    def trigger_threshold_refresh_training(self) -> dict[str, Any]:
+        with self._conn() as conn:
+            threshold_config_rows = conn.execute(
+                """
+                SELECT COUNT(*) AS total
+                FROM categories
+                WHERE retrieval_scope_json LIKE '%threshold%'
+                   OR retrieval_scope_json LIKE '%score%'
+                """
+            ).fetchone()
+            has_config = int(threshold_config_rows["total"] or 0) > 0
+
+        if not has_config:
+            return {"ok": False, "message": "No threshold configuration found in category retrieval scopes."}
+
+        job_id = self.create_training_job(
+            job_type="threshold_tune",
+            params={"workflow": "threshold_refresh"},
+        )
+        with self._conn() as conn:
+            audit_id = self._insert_audit_log(
+                conn,
+                action="trigger_threshold_refresh",
+                entity_type="categories",
+                entity_id=None,
+                metadata={"training_job_id": job_id, "status": "completed_noop"},
+            )
+        self.complete_training_job(job_id, {"audit_log_id": audit_id, "status": "completed_noop"})
+        return {"ok": True, "training_job_id": job_id, "audit_log_id": audit_id}
+
+    def resolve_wrong_answer_report(
+        self,
+        *,
+        report_id: int,
+        admin_action: str,
+        action_notes: str | None = None,
+    ) -> dict[str, Any]:
+        with self._conn() as conn:
+            cur = conn.execute(
+                """
+                UPDATE wrong_answer_reports
+                SET status='resolved',
+                    admin_action=?,
+                    action_notes=?,
+                    resolved_at=CURRENT_TIMESTAMP,
+                    updated_at=CURRENT_TIMESTAMP
+                WHERE id=? AND status='open'
+                """,
+                (admin_action, action_notes, report_id),
+            )
+            if cur.rowcount <= 0:
+                raise ValueError("Wrong-answer report not found or already resolved")
+            audit_id = self._insert_audit_log(
+                conn,
+                action="resolve_wrong_answer_report",
+                entity_type="wrong_answer_reports",
+                entity_id=report_id,
+                metadata={"admin_action": admin_action, "action_notes": action_notes},
+            )
+        return {"report_id": report_id, "audit_log_id": audit_id}
+
     def _table_exists(self, conn: sqlite3.Connection, table: str) -> bool:
         row = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name=?",

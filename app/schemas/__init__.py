@@ -9,6 +9,11 @@ from app.schemas.admin import (
     JsonConvertPayload,
     DecisionTreePayload,
     QnaPairPayload,
+    TrainBotCategoryRefreshPayload,
+    TrainBotPromoteExpertPayload,
+    TrainBotPromoteQnaPayload,
+    TrainBotReindexPayload,
+    TrainBotResolveWrongAnswerPayload,
     UnresolvedCategoryPayload,
 )
 from app.schemas.common import (
@@ -38,5 +43,10 @@ __all__ = [
     "JsonConvertPayload",
     "QueryClassificationResult",
     "QnaPairPayload",
+    "TrainBotCategoryRefreshPayload",
+    "TrainBotPromoteExpertPayload",
+    "TrainBotPromoteQnaPayload",
+    "TrainBotReindexPayload",
+    "TrainBotResolveWrongAnswerPayload",
     "UnresolvedCategoryPayload",
 ]

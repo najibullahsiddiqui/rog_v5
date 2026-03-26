@@ -91,3 +91,33 @@ class DecisionTreePayload(BaseModel):
     trigger_phrases: list[str] = Field(default_factory=list)
     nodes: list[dict] = Field(default_factory=list)
     edges: list[dict] = Field(default_factory=list)
+
+
+class TrainBotPromoteExpertPayload(BaseModel):
+    unresolved_query_id: int
+    category: str
+    expert_answer: str
+    source_note: str | None = None
+
+
+class TrainBotPromoteQnaPayload(BaseModel):
+    source_item_type: str
+    source_item_id: int | None = None
+    question: str
+    answer: str
+    category_code: str | None = None
+    source_note: str | None = None
+
+
+class TrainBotReindexPayload(BaseModel):
+    data_source_id: int
+
+
+class TrainBotCategoryRefreshPayload(BaseModel):
+    category_code: str | None = None
+
+
+class TrainBotResolveWrongAnswerPayload(BaseModel):
+    report_id: int
+    admin_action: str
+    action_notes: str | None = None
