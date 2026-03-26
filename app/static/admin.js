@@ -19,6 +19,54 @@ const chipsOverviewUnresolved = document.getElementById("chipsOverviewUnresolved
 const chipsOverviewFeedback = document.getElementById("chipsOverviewFeedback");
 const chipsUnresolved = document.getElementById("chipsUnresolved");
 const chipsFeedback = document.getElementById("chipsFeedback");
+const sourcesTable = document.getElementById("sourcesTable");
+const sourceDocumentsTable = document.getElementById("sourceDocumentsTable");
+const addSourceBtn = document.getElementById("addSourceBtn");
+const sourceNameInput = document.getElementById("sourceName");
+const sourceTypeInput = document.getElementById("sourceType");
+const sourceUriInput = document.getElementById("sourceUri");
+const sourceFormatInput = document.getElementById("sourceFormat");
+const jsonConvertTarget = document.getElementById("jsonConvertTarget");
+const jsonConvertInput = document.getElementById("jsonConvertInput");
+const jsonFileInput = document.getElementById("jsonFileInput");
+const previewJsonBtn = document.getElementById("previewJsonBtn");
+const importJsonBtn = document.getElementById("importJsonBtn");
+const jsonMappingFields = document.getElementById("jsonMappingFields");
+const jsonPreviewTable = document.getElementById("jsonPreviewTable");
+const jsonErrorsBox = document.getElementById("jsonErrorsBox");
+const qnaSearchInput = document.getElementById("qnaSearchInput");
+const qnaStatusFilter = document.getElementById("qnaStatusFilter");
+const qnaApprovalFilter = document.getElementById("qnaApprovalFilter");
+const qnaRefreshBtn = document.getElementById("qnaRefreshBtn");
+const qnaPairsTable = document.getElementById("qnaPairsTable");
+const qnaEditId = document.getElementById("qnaEditId");
+const qnaQuestionInput = document.getElementById("qnaQuestionInput");
+const qnaAnswerInput = document.getElementById("qnaAnswerInput");
+const qnaCategoryInput = document.getElementById("qnaCategoryInput");
+const qnaSourceNoteInput = document.getElementById("qnaSourceNoteInput");
+const qnaPriorityInput = document.getElementById("qnaPriorityInput");
+const qnaApprovalInput = document.getElementById("qnaApprovalInput");
+const qnaExactFlag = document.getElementById("qnaExactFlag");
+const qnaSemanticFlag = document.getElementById("qnaSemanticFlag");
+const qnaSaveBtn = document.getElementById("qnaSaveBtn");
+const qnaClearBtn = document.getElementById("qnaClearBtn");
+const categoriesRefreshBtn = document.getElementById("categoriesRefreshBtn");
+const categoriesTable = document.getElementById("categoriesTable");
+const categoriesStatsTable = document.getElementById("categoriesStatsTable");
+const categoryEditId = document.getElementById("categoryEditId");
+const categoryCodeInput = document.getElementById("categoryCodeInput");
+const categoryNameInput = document.getElementById("categoryNameInput");
+const categoryOrderInput = document.getElementById("categoryOrderInput");
+const categoryActiveInput = document.getElementById("categoryActiveInput");
+const categoryDescriptionInput = document.getElementById("categoryDescriptionInput");
+const categoryRoutingHintInput = document.getElementById("categoryRoutingHintInput");
+const categoryPromptHintInput = document.getElementById("categoryPromptHintInput");
+const categoryScopeInput = document.getElementById("categoryScopeInput");
+const categorySynonymInput = document.getElementById("categorySynonymInput");
+const categoryAddSynonymBtn = document.getElementById("categoryAddSynonymBtn");
+const categorySaveBtn = document.getElementById("categorySaveBtn");
+const categoryClearBtn = document.getElementById("categoryClearBtn");
+const categorySynonymsTable = document.getElementById("categorySynonymsTable");
 
 const expertModal = document.getElementById("expertModal");
 const modalOverlay = document.getElementById("modalOverlay");
@@ -45,6 +93,13 @@ const state = {
   feedbackCategory: "",
   unresolvedSearch: "",
   feedbackSearch: "",
+  dataSources: [],
+  activeSourceId: null,
+  sourceDocuments: [],
+  jsonPreview: null,
+  qnaPairs: [],
+  categories: [],
+  categorySynonyms: [],
 };
 
 function escapeHtml(text) {
@@ -383,6 +438,582 @@ async function loadFeedback() {
   renderFeedbackTables();
 }
 
+function buildQnaPairsTable(items) {
+  if (!items.length) return `<div class="empty-state">No Q&A pairs found.</div>`;
+  return `
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>ID</th><th>Category</th><th>Question</th><th>Answer</th><th>Approval</th><th>Status</th><th>Flags</th><th>Priority</th><th>Updated</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${items.map((q) => `
+          <tr>
+            <td>${escapeHtml(q.id)}</td>
+            <td>${escapeHtml(q.category_code || "—")}</td>
+            <td>${escapeHtml(q.question || "")}</td>
+            <td>${escapeHtml((q.answer || "").slice(0, 120))}</td>
+            <td>${escapeHtml(q.approval_status || "approved")}</td>
+            <td>${escapeHtml(q.status || "active")}</td>
+            <td>${q.is_exact_eligible ? "E" : "—"} / ${q.is_semantic_eligible ? "S" : "—"}</td>
+            <td>${escapeHtml(q.priority || 0)}</td>
+            <td>${escapeHtml(q.updated_at || "")}</td>
+            <td>
+              <button class="action-btn" onclick="editQnaPair(${q.id})">Edit</button>
+              <button class="action-btn" onclick="archiveQnaPair(${q.id})">Archive</button>
+              <button class="action-btn" onclick="deleteQnaPair(${q.id})">Delete</button>
+            </td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderQnaPairs() {
+  if (!qnaPairsTable) return;
+  qnaPairsTable.innerHTML = buildQnaPairsTable(state.qnaPairs || []);
+}
+
+async function loadQnaPairs() {
+  const search = encodeURIComponent((qnaSearchInput?.value || "").trim());
+  const status = encodeURIComponent(qnaStatusFilter?.value || "active");
+  const approval = encodeURIComponent(qnaApprovalFilter?.value || "approved");
+  const res = await fetch(`/api/admin/qna-pairs?search=${search}&status=${status}&approval_status=${approval}`);
+  const data = await res.json();
+  state.qnaPairs = data.items || [];
+  renderQnaPairs();
+}
+
+function clearQnaForm() {
+  if (qnaEditId) qnaEditId.value = "";
+  if (qnaQuestionInput) qnaQuestionInput.value = "";
+  if (qnaAnswerInput) qnaAnswerInput.value = "";
+  if (qnaCategoryInput) qnaCategoryInput.value = "";
+  if (qnaSourceNoteInput) qnaSourceNoteInput.value = "";
+  if (qnaPriorityInput) qnaPriorityInput.value = "0";
+  if (qnaApprovalInput) qnaApprovalInput.value = "approved";
+  if (qnaExactFlag) qnaExactFlag.checked = true;
+  if (qnaSemanticFlag) qnaSemanticFlag.checked = true;
+}
+
+function editQnaPair(qnaId) {
+  const item = (state.qnaPairs || []).find((q) => Number(q.id) === Number(qnaId));
+  if (!item) return;
+  qnaEditId.value = item.id;
+  qnaQuestionInput.value = item.question || "";
+  qnaAnswerInput.value = item.answer || "";
+  qnaCategoryInput.value = item.category_code || "";
+  qnaSourceNoteInput.value = item.source_note || "";
+  qnaPriorityInput.value = item.priority || 0;
+  qnaApprovalInput.value = item.approval_status || "approved";
+  qnaExactFlag.checked = !!item.is_exact_eligible;
+  qnaSemanticFlag.checked = !!item.is_semantic_eligible;
+}
+
+async function saveQnaPair() {
+  const editId = Number(qnaEditId?.value || 0);
+  const payload = {
+    question: (qnaQuestionInput?.value || "").trim(),
+    answer: (qnaAnswerInput?.value || "").trim(),
+    category_code: (qnaCategoryInput?.value || "").trim() || null,
+    source_note: (qnaSourceNoteInput?.value || "").trim() || null,
+    priority: Number(qnaPriorityInput?.value || 0) || 0,
+    approval_status: qnaApprovalInput?.value || "approved",
+    is_exact_eligible: !!qnaExactFlag?.checked,
+    is_semantic_eligible: !!qnaSemanticFlag?.checked,
+  };
+
+  if (!payload.question || !payload.answer) {
+    alert("Question and answer are required.");
+    return;
+  }
+
+  const url = editId ? `/api/admin/qna-pairs/${editId}` : "/api/admin/qna-pairs";
+  const method = editId ? "PUT" : "POST";
+  const res = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok || (data.ok === false)) {
+    alert(data.detail || data.message || "Failed to save Q&A pair.");
+    return;
+  }
+
+  if (data.duplicate_candidates && data.duplicate_candidates.length) {
+    console.warn("Potential duplicates:", data.duplicate_candidates);
+  }
+
+  clearQnaForm();
+  await loadQnaPairs();
+}
+
+async function archiveQnaPair(qnaId) {
+  const res = await fetch(`/api/admin/qna-pairs/${qnaId}/archive`, { method: "POST" });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    alert(data.detail || "Failed to archive Q&A pair.");
+    return;
+  }
+  await loadQnaPairs();
+}
+
+async function deleteQnaPair(qnaId) {
+  const res = await fetch(`/api/admin/qna-pairs/${qnaId}`, { method: "DELETE" });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    alert(data.detail || "Failed to delete Q&A pair.");
+    return;
+  }
+  await loadQnaPairs();
+}
+
+function buildCategoriesTable(items) {
+  if (!items.length) return `<div class="empty-state">No categories found.</div>`;
+  return `
+    <table class="admin-table">
+      <thead><tr><th>ID</th><th>Code</th><th>Name</th><th>Active</th><th>Order</th><th>Synonyms</th><th>Routing hint</th><th>Actions</th></tr></thead>
+      <tbody>
+        ${items.map((c) => `
+          <tr>
+            <td>${escapeHtml(c.id)}</td>
+            <td>${escapeHtml(c.code)}</td>
+            <td>${escapeHtml(c.name)}</td>
+            <td>${c.is_active ? "yes" : "no"}</td>
+            <td>${escapeHtml(c.display_order || 0)}</td>
+            <td>${escapeHtml(c.synonyms_count || 0)}</td>
+            <td>${escapeHtml(c.routing_hint || "—")}</td>
+            <td>
+              <button class="action-btn" onclick="editCategory(${c.id})">Edit</button>
+              <button class="action-btn" onclick="archiveCategory(${c.id})">Archive</button>
+              <button class="action-btn" onclick="loadCategorySynonyms(${c.id})">Synonyms</button>
+            </td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderCategories() {
+  if (categoriesTable) categoriesTable.innerHTML = buildCategoriesTable(state.categories || []);
+}
+
+function renderCategoryStats(statsItems) {
+  if (!categoriesStatsTable) return;
+  if (!statsItems || !statsItems.length) {
+    categoriesStatsTable.innerHTML = `<div class="empty-state">No category stats yet.</div>`;
+    return;
+  }
+  categoriesStatsTable.innerHTML = `
+    <table class="admin-table">
+      <thead><tr><th>Code</th><th>Q&A total</th><th>Q&A active</th><th>Q&A archived</th><th>Unresolved</th></tr></thead>
+      <tbody>
+        ${statsItems.map((s) => `
+          <tr>
+            <td>${escapeHtml(s.code || "")}</td>
+            <td>${escapeHtml(s.qna_pairs_total || 0)}</td>
+            <td>${escapeHtml(s.qna_active || 0)}</td>
+            <td>${escapeHtml(s.qna_archived || 0)}</td>
+            <td>${escapeHtml(s.unresolved_total || 0)}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderCategorySynonyms() {
+  if (!categorySynonymsTable) return;
+  if (!state.categorySynonyms.length) {
+    categorySynonymsTable.innerHTML = `<div class="empty-state">No synonyms for selected category.</div>`;
+    return;
+  }
+  categorySynonymsTable.innerHTML = `
+    <table class="admin-table">
+      <thead><tr><th>Synonym</th><th>Normalized</th></tr></thead>
+      <tbody>${state.categorySynonyms.map((s) => `
+        <tr><td>${escapeHtml(s.synonym)}</td><td>${escapeHtml(s.normalized_synonym)}</td></tr>
+      `).join("")}</tbody>
+    </table>
+  `;
+}
+
+async function loadCategories() {
+  const res = await fetch("/api/admin/categories?include_inactive=true");
+  const data = await res.json();
+  state.categories = data.items || [];
+  renderCategories();
+
+  const statsRes = await fetch("/api/admin/categories/stats");
+  const statsData = await statsRes.json();
+  renderCategoryStats(statsData.items || []);
+}
+
+function clearCategoryForm() {
+  if (categoryEditId) categoryEditId.value = "";
+  if (categoryCodeInput) categoryCodeInput.value = "";
+  if (categoryNameInput) categoryNameInput.value = "";
+  if (categoryOrderInput) categoryOrderInput.value = "0";
+  if (categoryActiveInput) categoryActiveInput.checked = true;
+  if (categoryDescriptionInput) categoryDescriptionInput.value = "";
+  if (categoryRoutingHintInput) categoryRoutingHintInput.value = "";
+  if (categoryPromptHintInput) categoryPromptHintInput.value = "";
+  if (categoryScopeInput) categoryScopeInput.value = "{}";
+  if (categorySynonymInput) categorySynonymInput.value = "";
+  state.categorySynonyms = [];
+  renderCategorySynonyms();
+}
+
+function editCategory(categoryId) {
+  const item = (state.categories || []).find((c) => Number(c.id) === Number(categoryId));
+  if (!item) return;
+  categoryEditId.value = item.id;
+  categoryCodeInput.value = item.code || "";
+  categoryNameInput.value = item.name || "";
+  categoryOrderInput.value = item.display_order || 0;
+  categoryActiveInput.checked = !!item.is_active;
+  categoryDescriptionInput.value = item.description || "";
+  categoryRoutingHintInput.value = item.routing_hint || "";
+  categoryPromptHintInput.value = item.prompt_hint || "";
+  categoryScopeInput.value = JSON.stringify(item.retrieval_scope || {}, null, 2);
+}
+
+async function saveCategory() {
+  const editId = Number(categoryEditId?.value || 0);
+  let scope = {};
+  try {
+    scope = JSON.parse(categoryScopeInput?.value || "{}");
+  } catch (err) {
+    alert("Invalid retrieval scope JSON.");
+    return;
+  }
+
+  const payload = {
+    code: (categoryCodeInput?.value || "").trim(),
+    name: (categoryNameInput?.value || "").trim(),
+    description: (categoryDescriptionInput?.value || "").trim() || null,
+    display_order: Number(categoryOrderInput?.value || 0) || 0,
+    is_active: !!categoryActiveInput?.checked,
+    routing_hint: (categoryRoutingHintInput?.value || "").trim() || null,
+    prompt_hint: (categoryPromptHintInput?.value || "").trim() || null,
+    retrieval_scope: scope,
+  };
+
+  if (!payload.code || !payload.name) {
+    alert("Category code and name are required.");
+    return;
+  }
+
+  const url = editId ? `/api/admin/categories/${editId}` : "/api/admin/categories";
+  const method = editId ? "PUT" : "POST";
+  const res = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    alert(data.detail || "Failed to save category.");
+    return;
+  }
+  await loadCategories();
+  clearCategoryForm();
+}
+
+async function archiveCategory(categoryId) {
+  const res = await fetch(`/api/admin/categories/${categoryId}/archive`, { method: "POST" });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    alert(data.detail || "Failed to archive category.");
+    return;
+  }
+  await loadCategories();
+}
+
+async function loadCategorySynonyms(categoryId) {
+  categoryEditId.value = categoryId;
+  const res = await fetch(`/api/admin/categories/${categoryId}/synonyms`);
+  const data = await res.json();
+  state.categorySynonyms = data.items || [];
+  renderCategorySynonyms();
+}
+
+async function addCategorySynonym() {
+  const categoryId = Number(categoryEditId?.value || 0);
+  if (!categoryId) {
+    alert("Select a category first.");
+    return;
+  }
+  const synonym = (categorySynonymInput?.value || "").trim();
+  if (!synonym) {
+    alert("Enter a synonym.");
+    return;
+  }
+  const res = await fetch(`/api/admin/categories/${categoryId}/synonyms`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ synonym }),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    alert(data.detail || "Failed to add synonym.");
+    return;
+  }
+  categorySynonymInput.value = "";
+  await loadCategorySynonyms(categoryId);
+  await loadCategories();
+}
+
+function buildSourcesTable(items) {
+  if (!items.length) {
+    return `<div class="empty-state">No data sources configured.</div>`;
+  }
+
+  return `
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>ID</th><th>Name</th><th>Type</th><th>Format</th><th>Status</th>
+          <th>Docs</th><th>Chunks</th><th>Last Ingestion</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+      ${items.map((item) => `
+        <tr>
+          <td>${escapeHtml(item.id)}</td>
+          <td>${escapeHtml(item.name)}</td>
+          <td>${escapeHtml(item.source_type)}</td>
+          <td>${escapeHtml(item.source_format || "unknown")}</td>
+          <td>${escapeHtml(item.status)}</td>
+          <td>${escapeHtml(item.document_count || 0)}</td>
+          <td>${escapeHtml(item.chunk_count || 0)}</td>
+          <td>${escapeHtml(item.last_ingestion_status || "never")} ${escapeHtml(item.last_ingestion_at || "")}</td>
+          <td>
+            <button class="action-btn" onclick="viewSourceDocuments(${item.id})">Docs</button>
+            <button class="action-btn" onclick="toggleSourceStatus(${item.id}, '${item.status === "enabled" ? "disabled" : "enabled"}')">${item.status === "enabled" ? "Disable" : "Enable"}</button>
+            <button class="action-btn" onclick="triggerSourceReingest(${item.id})">Reingest</button>
+          </td>
+        </tr>
+      `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderSources() {
+  if (!sourcesTable) return;
+  sourcesTable.innerHTML = buildSourcesTable(state.dataSources || []);
+}
+
+function renderSourceDocuments() {
+  if (!sourceDocumentsTable) return;
+  if (!state.sourceDocuments.length) {
+    sourceDocumentsTable.innerHTML = `<div class="empty-state">Select a source to view documents.</div>`;
+    return;
+  }
+
+  sourceDocumentsTable.innerHTML = `
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>File</th><th>Version</th><th>Hash</th><th>Chunks</th><th>Status</th><th>Ingested At</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${state.sourceDocuments.map((d) => `
+          <tr>
+            <td>${escapeHtml(d.file_name)}</td>
+            <td>${escapeHtml(d.version || "—")}</td>
+            <td>${escapeHtml(d.content_hash || "—")}</td>
+            <td>${escapeHtml(d.chunk_count || 0)}</td>
+            <td>${escapeHtml(d.status || "active")}</td>
+            <td>${escapeHtml(d.ingested_at || "—")}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+async function loadDataSources() {
+  const res = await fetch("/api/admin/data-sources");
+  const data = await res.json();
+  state.dataSources = data.items || [];
+  renderSources();
+}
+
+async function viewSourceDocuments(sourceId) {
+  state.activeSourceId = sourceId;
+  const res = await fetch(`/api/admin/data-sources/${sourceId}/documents`);
+  const data = await res.json();
+  state.sourceDocuments = data.items || [];
+  renderSourceDocuments();
+}
+
+async function addSource() {
+  const payload = {
+    name: (sourceNameInput?.value || "").trim(),
+    source_type: (sourceTypeInput?.value || "manual_upload").trim(),
+    source_format: (sourceFormatInput?.value || "manual").trim().toLowerCase(),
+    uri: (sourceUriInput?.value || "").trim() || null,
+  };
+
+  if (!payload.name) {
+    alert("Source name is required.");
+    return;
+  }
+
+  const res = await fetch("/api/admin/data-sources", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    alert(data.detail || data.message || "Failed to create source.");
+    return;
+  }
+
+  sourceNameInput.value = "";
+  sourceUriInput.value = "";
+  sourceFormatInput.value = "";
+  await loadDataSources();
+}
+
+async function toggleSourceStatus(sourceId, status) {
+  const res = await fetch(`/api/admin/data-sources/${sourceId}/status`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    alert(data.detail || data.message || "Failed to update source status.");
+    return;
+  }
+
+  await loadDataSources();
+}
+
+async function triggerSourceReingest(sourceId) {
+  const res = await fetch(`/api/admin/data-sources/${sourceId}/reingest`, { method: "POST" });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    alert(data.detail || data.message || "Failed to queue reingest.");
+    return;
+  }
+  await loadDataSources();
+}
+
+function renderJsonPreview(previewData) {
+  state.jsonPreview = previewData || null;
+  if (!jsonMappingFields || !jsonPreviewTable || !jsonErrorsBox) return;
+
+  if (!previewData) {
+    jsonMappingFields.innerHTML = "";
+    jsonPreviewTable.innerHTML = "";
+    jsonErrorsBox.innerHTML = "";
+    return;
+  }
+
+  const fields = previewData.mapping_fields || [];
+  jsonMappingFields.innerHTML = `
+    <div><strong>Target:</strong> ${escapeHtml(previewData.target || "")}</div>
+    <div><strong>Record count:</strong> ${escapeHtml(previewData.record_count || 0)}</div>
+    <div><strong>Required fields:</strong> ${escapeHtml(fields.join(", ") || "—")}</div>
+  `;
+
+  const rows = previewData.preview || [];
+  if (!rows.length) {
+    jsonPreviewTable.innerHTML = `<div class="empty-state">No records to preview.</div>`;
+  } else {
+    jsonPreviewTable.innerHTML = `
+      <table class="admin-table">
+        <thead><tr><th>Row</th><th>Mapped Fields</th><th>Extra Fields</th></tr></thead>
+        <tbody>
+          ${rows.map((r) => `
+            <tr>
+              <td>${escapeHtml(r.row)}</td>
+              <td><pre>${escapeHtml(JSON.stringify(r.mapped || {}, null, 2))}</pre></td>
+              <td>${escapeHtml((r.extra_fields || []).join(", ") || "—")}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  const errors = previewData.errors || [];
+  if (!errors.length) {
+    jsonErrorsBox.innerHTML = `<div class="empty-state">No validation errors.</div>`;
+  } else {
+    jsonErrorsBox.innerHTML = `
+      <div class="empty-state" style="color:#b91c1c; text-align:left;">
+        <strong>Validation errors (${errors.length}):</strong>
+        <ul>${errors.map((e) => `<li>${escapeHtml(e)}</li>`).join("")}</ul>
+      </div>
+    `;
+  }
+}
+
+async function previewJsonConvert() {
+  const target = (jsonConvertTarget?.value || "").trim();
+  const jsonText = (jsonConvertInput?.value || "").trim();
+  if (!target || !jsonText) {
+    alert("Please select target and provide JSON.");
+    return;
+  }
+
+  const res = await fetch("/api/admin/json-convert/preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ target, json_text: jsonText }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    alert(data.detail || "Preview failed.");
+    return;
+  }
+  renderJsonPreview(data);
+}
+
+async function importJsonConvert() {
+  const target = (jsonConvertTarget?.value || "").trim();
+  const jsonText = (jsonConvertInput?.value || "").trim();
+  if (!target || !jsonText) {
+    alert("Please select target and provide JSON.");
+    return;
+  }
+
+  const res = await fetch("/api/admin/json-convert/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ target, json_text: jsonText }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    alert(data.detail || "Import failed.");
+    return;
+  }
+
+  const msg = `Imported: ${data.created_count || 0}, Errors: ${data.error_count || 0}, Audit Log ID: ${data.audit_log_id || "n/a"}`;
+  alert(msg);
+  if (data.errors && data.errors.length) {
+    renderJsonPreview({
+      target,
+      record_count: 0,
+      mapping_fields: state.jsonPreview?.mapping_fields || [],
+      preview: state.jsonPreview?.preview || [],
+      errors: data.errors,
+    });
+  }
+  await refreshAll();
+}
+
 async function saveExpertAnswer() {
   const payload = {
     unresolved_query_id: Number(document.getElementById("expertUnresolvedId").value || 0) || null,
@@ -436,7 +1067,7 @@ async function refreshAll() {
   refreshBtn.innerHTML = `<span>↻</span><span>Refreshing...</span>`;
 
   try {
-    await Promise.all([loadSummary(), loadUnresolved(), loadFeedback()]);
+    await Promise.all([loadSummary(), loadUnresolved(), loadFeedback(), loadDataSources(), loadQnaPairs(), loadCategories()]);
   } catch (error) {
     console.error(error);
     alert("Failed to load dashboard data.");
@@ -530,6 +1161,15 @@ window.exportUnresolved = exportUnresolved;
 window.exportFeedback = exportFeedback;
 window.setUnresolvedCategory = setUnresolvedCategory;
 window.setFeedbackCategory = setFeedbackCategory;
+window.viewSourceDocuments = viewSourceDocuments;
+window.toggleSourceStatus = toggleSourceStatus;
+window.triggerSourceReingest = triggerSourceReingest;
+window.editQnaPair = editQnaPair;
+window.archiveQnaPair = archiveQnaPair;
+window.deleteQnaPair = deleteQnaPair;
+window.editCategory = editCategory;
+window.archiveCategory = archiveCategory;
+window.loadCategorySynonyms = loadCategorySynonyms;
 
 refreshBtn.addEventListener("click", refreshAll);
 
@@ -537,6 +1177,27 @@ closeModalBtn.addEventListener("click", closeExpertModal);
 closeModalSecondaryBtn.addEventListener("click", closeExpertModal);
 modalOverlay.addEventListener("click", closeExpertModal);
 saveExpertBtn.addEventListener("click", saveExpertAnswer);
+if (addSourceBtn) addSourceBtn.addEventListener("click", addSource);
+if (previewJsonBtn) previewJsonBtn.addEventListener("click", previewJsonConvert);
+if (importJsonBtn) importJsonBtn.addEventListener("click", importJsonConvert);
+if (qnaSaveBtn) qnaSaveBtn.addEventListener("click", saveQnaPair);
+if (qnaClearBtn) qnaClearBtn.addEventListener("click", clearQnaForm);
+if (qnaRefreshBtn) qnaRefreshBtn.addEventListener("click", loadQnaPairs);
+if (qnaSearchInput) qnaSearchInput.addEventListener("input", loadQnaPairs);
+if (qnaStatusFilter) qnaStatusFilter.addEventListener("change", loadQnaPairs);
+if (qnaApprovalFilter) qnaApprovalFilter.addEventListener("change", loadQnaPairs);
+if (categoriesRefreshBtn) categoriesRefreshBtn.addEventListener("click", loadCategories);
+if (categorySaveBtn) categorySaveBtn.addEventListener("click", saveCategory);
+if (categoryClearBtn) categoryClearBtn.addEventListener("click", clearCategoryForm);
+if (categoryAddSynonymBtn) categoryAddSynonymBtn.addEventListener("click", addCategorySynonym);
+if (jsonFileInput) {
+  jsonFileInput.addEventListener("change", async (event) => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    const text = await file.text();
+    if (jsonConvertInput) jsonConvertInput.value = text;
+  });
+}
 
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !expertModal.classList.contains("hidden")) {

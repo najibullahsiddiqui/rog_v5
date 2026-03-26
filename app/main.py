@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from fastapi import FastAPI, Request, HTTPException
@@ -9,9 +10,9 @@ from fastapi.templating import Jinja2Templates
 
 from app.core.schemas import AskRequest
 from app.core.pipeline import QAPipeline, normalize_question_text
-from app.core.config import PDF_DIR
+from app.core.config import PDF_DIR, INDEX_DIR
 from app.core.admin_store import AdminStore
-from app.core.category_utils import infer_category
+from app.services.categories_service import CategoriesService
 
 from app.api.admin_api import router as admin_router
 from app.api.user_feedback_api import router as feedback_router
@@ -25,6 +26,7 @@ app.include_router(feedback_router)
 app.include_router(unresolved_category_router)
 
 store = AdminStore()
+categories_service = CategoriesService(store)
 REFUSAL_TEXT = "The answer is not available in the approved document set."
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -49,6 +51,55 @@ def home(request: Request):
 @app.get("/health")
 def health():
     return {"ok": True}
+
+
+@app.get("/health/diagnostics")
+def health_diagnostics():
+    pdf_files = sorted(PDF_DIR.glob("*.pdf"))
+    chunk_path = INDEX_DIR / "chunks.jsonl"
+    index_path = INDEX_DIR / "faiss.index"
+    bm25_path = INDEX_DIR / "bm25.pkl"
+
+    chunk_count = 0
+    if chunk_path.exists():
+        with chunk_path.open("r", encoding="utf-8") as f:
+            chunk_count = sum(1 for line in f if line.strip())
+
+    sample_chunk = None
+    if chunk_path.exists():
+        with chunk_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    sample_chunk = json.loads(line)
+                    break
+
+    dashboard_totals = store.dashboard_summary().get("totals", {})
+
+    return {
+        "ok": True,
+        "documents": {
+            "pdf_count": len(pdf_files),
+            "pdf_files": [p.name for p in pdf_files],
+        },
+        "index": {
+            "faiss_index_exists": index_path.exists(),
+            "bm25_exists": bm25_path.exists(),
+            "chunks_exists": chunk_path.exists(),
+            "chunks_count": chunk_count,
+            "sample_chunk": {
+                "doc": sample_chunk.get("doc"),
+                "page": sample_chunk.get("page"),
+            }
+            if sample_chunk
+            else None,
+        },
+        "admin": {
+            "open_unresolved": dashboard_totals.get("open_unresolved", 0),
+            "feedback_total": dashboard_totals.get("feedback_total", 0),
+            "expert_answers_total": dashboard_totals.get("expert_answers_total", 0),
+        },
+    }
 
 
 @app.get("/pdf/{file_name:path}")
@@ -81,6 +132,49 @@ def ask(payload: AskRequest):
     normalized_question = normalize_question_text(question)
 
     try:
+        qna_exact = store.find_qna_exact(
+            question=question,
+            normalized_question=normalized_question,
+        )
+        if qna_exact:
+            return {
+                "answer": qna_exact["answer"],
+                "grounded": True,
+                "citations": [],
+                "category": qna_exact.get("category_code"),
+                "predicted_category": qna_exact.get("category_code"),
+                "unresolved_query_id": None,
+                "answer_source": "qna_exact",
+                "debug": {
+                    "served_from": "qna_pair_exact",
+                    "qna_pair_id": qna_exact["id"],
+                    "query_info": {
+                        "normalized_question": normalized_question,
+                    },
+                },
+            }
+
+        qna_candidates = store.find_qna_semantic_candidates(question, limit=3)
+        if qna_candidates and float(qna_candidates[0].get("semantic_score") or 0.0) >= 0.9:
+            winner = qna_candidates[0]
+            return {
+                "answer": winner["answer"],
+                "grounded": True,
+                "citations": [],
+                "category": winner.get("category_code"),
+                "predicted_category": winner.get("category_code"),
+                "unresolved_query_id": None,
+                "answer_source": "qna_semantic",
+                "debug": {
+                    "served_from": "qna_pair_semantic",
+                    "qna_pair_id": winner["id"],
+                    "semantic_score": winner.get("semantic_score"),
+                    "query_info": {
+                        "normalized_question": normalized_question,
+                    },
+                },
+            }
+
         expert = store.find_expert_answer(
             question=question,
             normalized_question=normalized_question,
@@ -103,12 +197,13 @@ def ask(payload: AskRequest):
                 },
             }
 
-        result = get_pipeline().ask(question)
+        routed_category = categories_service.predict_from_question(question)
+        result = get_pipeline().ask(question, category_hint_override=routed_category)
 
-        predicted_category = infer_category(
+        predicted_category = categories_service.infer(
             question,
             result.get("citations", []),
-            None,
+            routed_category,
         )
 
         answer_text = (result.get("answer") or "").strip()

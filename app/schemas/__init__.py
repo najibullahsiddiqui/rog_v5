@@ -1,7 +1,13 @@
 from app.schemas.admin import (
     AdminRecordSchema,
+    CategoryPayload,
+    CategorySynonymPayload,
+    DataSourceCreatePayload,
+    DataSourceStatusPayload,
     ExpertAnswerPayload,
     FeedbackPayload,
+    JsonConvertPayload,
+    QnaPairPayload,
     UnresolvedCategoryPayload,
 )
 from app.schemas.common import (
@@ -17,12 +23,18 @@ __all__ = [
     "APIResponseSchema",
     "AdminErrorSchema",
     "AdminRecordSchema",
+    "CategoryPayload",
+    "CategorySynonymPayload",
     "AskRequest",
     "AskResponse",
     "CitationSchema",
+    "DataSourceCreatePayload",
+    "DataSourceStatusPayload",
     "ExpertAnswerPayload",
     "FeedbackPayload",
     "IngestionJobSchema",
+    "JsonConvertPayload",
     "QueryClassificationResult",
+    "QnaPairPayload",
     "UnresolvedCategoryPayload",
 ]
