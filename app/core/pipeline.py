@@ -183,9 +183,9 @@ class QAPipeline:
     def __init__(self):
         self.retriever = Retriever()
 
-    def ask(self, question: str) -> dict:
+    def ask(self, question: str, category_hint_override: str | None = None) -> dict:
         normalized_question = normalize_question_text(question)
-        category_hint = category_from_question(question)
+        category_hint = category_hint_override or category_from_question(question)
         hits, retrieval_trace = self.retriever.retrieve_with_trace(question, category_hint=category_hint)
 
         grounded_hits: List[dict] = [h for h in hits if len((h.get("text") or "").strip()) > 60]

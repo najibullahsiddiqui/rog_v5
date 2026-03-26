@@ -1,0 +1,48 @@
+{
+  "name": "default_enterprise_eval",
+  "description": "Baseline evaluation mix for demo readiness",
+  "cases": [
+    {
+      "id": "faq_exact_001",
+      "type": "exact_faq",
+      "query": "What is copyright?",
+      "expected_answer_contains": ["copyright"],
+      "expected_grounded": true
+    },
+    {
+      "id": "faq_para_001",
+      "type": "paraphrased_faq",
+      "query": "Can you explain in simple words what copyright protects?",
+      "expected_answer_contains": ["copyright"],
+      "expected_grounded": true
+    },
+    {
+      "id": "synth_001",
+      "type": "grounded_synthesis",
+      "query": "Summarize key differences between patent and trademark in one answer.",
+      "expected_grounded": true,
+      "expected_citation_contains": ["patent", "trademark"]
+    },
+    {
+      "id": "oos_001",
+      "type": "out_of_scope",
+      "query": "Who won the FIFA world cup in 2018?",
+      "expected_answer_source": "unresolved",
+      "expected_grounded": false
+    },
+    {
+      "id": "route_cat_001",
+      "type": "category_routing",
+      "query": "I need help with trademark opposition filing.",
+      "expected_grounded": true
+    },
+    {
+      "id": "tree_001",
+      "type": "decision_tree",
+      "query": "Start trademark decision tree",
+      "session_key": "eval_tree_001",
+      "expected_answer_source": "decision_tree_prompt",
+      "expected_grounded": false
+    }
+  ]
+}
