@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IP Analytics</title>
+  <link rel="stylesheet" href="/static/admin.css" />
+</head>
+<body>
+  <div class="content" style="max-width: 1200px; margin: 0 auto;">
+    <header class="topbar">
+      <div>
+        <h1>Analytics</h1>
+        <p class="subtitle">Real-time operational analytics from production records.</p>
+      </div>
+      <div class="toolbar">
+        <a class="btn btn-secondary" href="/admin">Dashboard</a>
+        <select id="rangeDays" class="btn btn-secondary" style="height:44px;">
+          <option value="7">Last 7 days</option>
+          <option value="30" selected>Last 30 days</option>
+          <option value="90">Last 90 days</option>
+        </select>
+        <button id="reloadAnalytics" class="btn btn-primary" type="button">Refresh</button>
+      </div>
+    </header>
+
+    <section class="panel">
+      <div class="panel-header"><h2>Chat Volume</h2></div>
+      <div id="chatVolumeTable" class="table-wrap"></div>
+    </section>
+
+    <section class="panel mt-18">
+      <div class="panel-header"><h2>Unresolved / Wrong Answer Trends</h2></div>
+      <div id="trendTable" class="table-wrap"></div>
+    </section>
+
+    <section class="panel mt-18">
+      <div class="panel-header"><h2>Answer Mode Rate</h2></div>
+      <div id="answerModeRateTable" class="table-wrap"></div>
+    </section>
+
+    <section class="panel mt-18">
+      <div class="panel-header"><h2>Feedback Satisfaction Trend</h2></div>
+      <div id="feedbackTrendTable" class="table-wrap"></div>
+    </section>
+
+    <section class="panel mt-18">
+      <div class="panel-header"><h2>Top Insights</h2></div>
+      <div id="insightsGrid" class="kpi-grid"></div>
+    </section>
+  </div>
+
+  <script src="/static/admin_analytics.js"></script>
+</body>
+</html>

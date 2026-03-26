@@ -1,41 +1,29 @@
 from __future__ import annotations
 
-from pathlib import Path
 import io
+from pathlib import Path
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
 from openpyxl import Workbook
 
-from app.core.admin_store import AdminStore
-from app.core.category_utils import normalize_category
+from app.schemas import ExpertAnswerPayload
+from app.services import AnalyticsService, CategoriesService, ExpertAnswersService
+from app.repositories import AdminRepository
 from app.core.pipeline import normalize_question_text
 
 
 router = APIRouter(tags=["admin"])
-store = AdminStore()
+admin_repository = AdminRepository()
+analytics_service = AnalyticsService(admin_repository)
+expert_answers_service = ExpertAnswersService(admin_repository)
+categories_service = CategoriesService()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 
-# -----------------------------
-# Models
-# -----------------------------
-class ExpertAnswerPayload(BaseModel):
-    unresolved_query_id: int | None = None
-    question: str
-    normalized_question: str | None = None
-    category: str
-    expert_answer: str
-    source_note: str | None = None
-
-
-# -----------------------------
-# UI ROUTE
-# -----------------------------
 @router.get("/admin", response_class=HTMLResponse)
 def admin_dashboard(request: Request):
     return templates.TemplateResponse(
@@ -44,12 +32,27 @@ def admin_dashboard(request: Request):
     )
 
 
-# -----------------------------
-# DATA APIs
-# -----------------------------
 @router.get("/api/admin/summary")
 def get_summary():
-    return store.dashboard_summary()
+    return analytics_service.summary()
+
+
+@router.get("/admin/analytics", response_class=HTMLResponse)
+def admin_analytics(request: Request):
+    return templates.TemplateResponse(
+        "admin_analytics.html",
+        {"request": request},
+    )
+
+
+@router.get("/api/admin/dashboard-summary")
+def get_dashboard_summary():
+    return analytics_service.dashboard_summary()
+
+
+@router.get("/api/admin/analytics")
+def get_analytics(range_days: int = Query(default=30, ge=1, le=365)):
+    return analytics_service.analytics_breakdown(range_days=range_days)
 
 
 @router.get("/api/admin/unresolved")
@@ -57,22 +60,19 @@ def get_unresolved(
     category: str | None = Query(default=None),
     status: str = Query(default="open"),
 ):
-    norm = normalize_category(category) if category else None
-    return {"items": store.list_unresolved(norm, status)}
+    norm = categories_service.normalize(category) if category else None
+    return {"items": admin_repository.list_unresolved(norm, status)}
 
 
 @router.get("/api/admin/feedback")
 def get_feedback(category: str | None = Query(default=None)):
-    norm = normalize_category(category) if category else None
-    return {"items": store.list_feedback(norm)}
+    norm = categories_service.normalize(category) if category else None
+    return {"items": admin_repository.list_feedback(norm)}
 
 
-# -----------------------------
-# EXPERT ANSWER SAVE
-# -----------------------------
 @router.post("/api/admin/expert-answer")
 def save_expert_answer(payload: ExpertAnswerPayload):
-    category = normalize_category(payload.category)
+    category = categories_service.normalize(payload.category)
 
     if not category:
         return {
@@ -84,7 +84,7 @@ def save_expert_answer(payload: ExpertAnswerPayload):
         payload.normalized_question or payload.question
     )
 
-    expert_answer_id = store.save_expert_answer(
+    expert_answer_id = expert_answers_service.save(
         question=payload.question,
         normalized_question=normalized_question,
         category=category,
@@ -99,16 +99,13 @@ def save_expert_answer(payload: ExpertAnswerPayload):
     }
 
 
-# -----------------------------
-# EXPORT: UNRESOLVED → EXCEL
-# -----------------------------
 @router.get("/api/admin/export/unresolved")
 def export_unresolved(
     category: str | None = Query(default=None),
     status: str = Query(default="open"),
 ):
-    norm = normalize_category(category) if category else None
-    items = store.list_unresolved(norm, status)
+    norm = categories_service.normalize(category) if category else None
+    items = admin_repository.list_unresolved(norm, status)
 
     wb = Workbook()
     ws = wb.active
@@ -139,13 +136,10 @@ def export_unresolved(
     )
 
 
-# -----------------------------
-# EXPORT: FEEDBACK → EXCEL
-# -----------------------------
 @router.get("/api/admin/export/feedback")
 def export_feedback(category: str | None = Query(default=None)):
-    norm = normalize_category(category) if category else None
-    items = store.list_feedback(norm)
+    norm = categories_service.normalize(category) if category else None
+    items = admin_repository.list_feedback(norm)
 
     wb = Workbook()
     ws = wb.active

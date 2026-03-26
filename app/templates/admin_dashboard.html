@@ -75,6 +75,7 @@
         </div>
 
         <div class="toolbar toolbar-top">
+          <a class="btn btn-secondary" href="/admin/analytics">Analytics</a>
           <button id="refreshBtn" class="btn btn-primary" type="button">
             <span>↻</span>
             <span>Refresh</span>
@@ -84,6 +85,26 @@
 
       <section id="section-overview" class="section-block view-section active-view">
         <div id="kpiGrid" class="kpi-grid"></div>
+
+        <div class="panel mt-18">
+          <div class="panel-header">
+            <div>
+              <h2>Answer Mode Distribution</h2>
+              <p class="panel-subtitle">Current served modes across chats.</p>
+            </div>
+          </div>
+          <div id="answerModeDistribution" class="table-wrap"></div>
+        </div>
+
+        <div class="panel mt-18">
+          <div class="panel-header">
+            <div>
+              <h2>Category Distribution</h2>
+              <p class="panel-subtitle">Top categories from live records.</p>
+            </div>
+          </div>
+          <div id="categoryDistribution" class="table-wrap"></div>
+        </div>
 
         <div class="panel mt-18">
           <div class="panel-header">

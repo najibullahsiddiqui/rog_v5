@@ -4,12 +4,13 @@ import json
 import pickle
 import re
 from difflib import SequenceMatcher
-from typing import List
+from typing import Any, List
 
 import faiss
 import numpy as np
 from sentence_transformers import SentenceTransformer, CrossEncoder
 
+from app.core.category_utils import DOC_CATEGORY_MAP, category_from_question, normalize_category
 from app.core.config import (
     INDEX_DIR,
     EMBEDDING_MODEL,
@@ -33,7 +34,6 @@ def normalize_question_text(text: str) -> str:
 def normalize_token(token: str) -> str:
     token = token.lower().strip()
 
-    # very light normalization
     if token.endswith("ing") and len(token) > 5:
         token = token[:-3]
     elif token.endswith("ed") and len(token) > 4:
@@ -53,7 +53,7 @@ def preprocess_for_bm25(text: str) -> List[str]:
     stopwords = {
         "the", "is", "are", "a", "an", "of", "to", "in", "for", "on",
         "by", "with", "does", "do", "did", "can", "i", "we", "you",
-        "it", "this", "that", "be"
+        "it", "this", "that", "be",
     }
 
     return [t for t in tokens if t and t not in stopwords]
@@ -88,7 +88,6 @@ def question_similarity(user_question: str, chunk_question: str) -> float:
 
     base = SequenceMatcher(None, uq, cq).ratio()
 
-    # containment boost
     if uq in cq or cq in uq:
         base = max(base, 0.92)
 
@@ -105,7 +104,6 @@ def expand_query(query: str) -> List[str]:
     q = normalize_question_text(query)
     expansions = [q]
 
-    # lightweight domain expansions
     if "copyright" in q and "fact" in q:
         expansions.extend([
             "copyright factual information",
@@ -119,7 +117,6 @@ def expand_query(query: str) -> List[str]:
             "ideas concepts not protected by copyright",
         ])
 
-    # dedupe preserving order
     seen = set()
     final = []
     for item in expansions:
@@ -173,6 +170,7 @@ class Retriever:
             hit = dict(self.chunks[best_idx])
             hit["rerank_score"] = 1.0
             hit["direct_match_score"] = float(best_score)
+            hit["retrieval_channel"] = "direct_match"
             return [hit]
 
         return []
@@ -189,6 +187,7 @@ class Retriever:
                 continue
             hit = dict(self.chunks[idx])
             hit["vector_score"] = float(score)
+            hit["retrieval_channel"] = "vector"
             vector_hits.append(hit)
 
         return vector_hits
@@ -201,19 +200,96 @@ class Retriever:
         for idx in bm25_top_idx:
             hit = dict(self.chunks[int(idx)])
             hit["bm25_score"] = float(bm25_scores[int(idx)])
+            hit["retrieval_channel"] = "bm25"
             bm25_hits.append(hit)
 
         return bm25_hits
 
-    def retrieve(self, query: str) -> List[dict]:
-        # FAST PATH
+    def _resolve_category_hint(self, query: str, category_hint: str | None) -> str | None:
+        normalized = normalize_category(category_hint)
+        if normalized:
+            return normalized
+        return category_from_question(query)
+
+    def _apply_category_filter(self, candidates: list[dict], category_hint: str | None) -> tuple[list[dict], int]:
+        if not category_hint:
+            return candidates, 0
+
+        filtered = []
+        dropped = 0
+        for c in candidates:
+            doc_name = c.get("doc_name")
+            doc_category = DOC_CATEGORY_MAP.get(doc_name)
+            if doc_category is None or doc_category == category_hint:
+                filtered.append(c)
+            else:
+                dropped += 1
+
+        return filtered, dropped
+
+    def _dedupe_candidates(self, candidates: list[dict]) -> list[dict]:
+        deduped: dict[str, dict] = {}
+
+        for c in candidates:
+            text = normalize_question_text((c.get("text") or "")[:500])
+            key = c.get("chunk_id") or f"{c.get('doc_name')}::{c.get('page_no')}::{text[:150]}"
+
+            if key not in deduped:
+                deduped[key] = c
+                continue
+
+            existing = deduped[key]
+            if float(c.get("rerank_score", -999)) > float(existing.get("rerank_score", -999)):
+                deduped[key] = c
+
+        return list(deduped.values())
+
+    def _candidate_trace(self, candidates: list[dict], limit: int = 10) -> list[dict[str, Any]]:
+        traces: list[dict[str, Any]] = []
+        for c in candidates[:limit]:
+            traces.append(
+                {
+                    "chunk_id": c.get("chunk_id"),
+                    "doc_name": c.get("doc_name"),
+                    "page_no": c.get("page_no"),
+                    "retrieval_channel": c.get("retrieval_channel"),
+                    "vector_score": c.get("vector_score"),
+                    "bm25_score": c.get("bm25_score"),
+                    "rerank_score": c.get("rerank_score"),
+                    "hybrid_score": c.get("hybrid_score"),
+                    "text_preview": (c.get("text") or "")[:140],
+                }
+            )
+        return traces
+
+    def retrieve_with_trace(self, query: str, category_hint: str | None = None) -> tuple[list[dict], dict]:
+        trace: dict[str, Any] = {
+            "query": query,
+            "normalized_query": normalize_question_text(query),
+            "category_hint": None,
+            "expanded_queries": [],
+            "candidate_counts": {},
+            "top_candidates": [],
+        }
+
+        resolved_category = self._resolve_category_hint(query, category_hint)
+        trace["category_hint"] = resolved_category
+
         direct_hits = self._direct_match_hits(query)
         if direct_hits:
-            return direct_hits
+            trace["candidate_counts"] = {
+                "direct_hits": len(direct_hits),
+                "after_category_filter": len(direct_hits),
+                "after_dedupe": len(direct_hits),
+                "final": len(direct_hits),
+            }
+            trace["top_candidates"] = self._candidate_trace(direct_hits, limit=1)
+            return direct_hits, trace
 
         expanded_queries = expand_query(query)
+        trace["expanded_queries"] = expanded_queries
 
-        merged = {}
+        merged: dict[str, dict] = {}
 
         for q in expanded_queries:
             vector_hits = self._vector_hits_for_query(q)
@@ -225,10 +301,19 @@ class Retriever:
                     merged[key] = hit
                 else:
                     merged[key].update(hit)
+                    if hit.get("retrieval_channel") and merged[key].get("retrieval_channel") != hit.get("retrieval_channel"):
+                        merged[key]["retrieval_channel"] = "hybrid"
 
         candidates = list(merged.values())
+        trace["candidate_counts"]["hybrid_merged"] = len(candidates)
         if not candidates:
-            return []
+            trace["candidate_counts"]["final"] = 0
+            return [], trace
+
+        filtered, dropped = self._apply_category_filter(candidates, resolved_category)
+        candidates = filtered if filtered else candidates
+        trace["candidate_counts"]["after_category_filter"] = len(candidates)
+        trace["candidate_counts"]["dropped_by_category"] = dropped
 
         for c in candidates:
             c["hybrid_score"] = (
@@ -241,13 +326,22 @@ class Retriever:
 
         for c, rr in zip(candidates, rerank_scores):
             score = float(rr)
-
-            # slight FAQ boost
             text = (c.get("text") or "").strip()
             if "?" in text[:200]:
                 score += 0.08
-
             c["rerank_score"] = score
 
         candidates.sort(key=lambda x: x["rerank_score"], reverse=True)
-        return candidates[:TOP_K_RERANK]
+        deduped = self._dedupe_candidates(candidates)
+        deduped.sort(key=lambda x: float(x.get("rerank_score", 0.0)), reverse=True)
+
+        trace["candidate_counts"]["after_dedupe"] = len(deduped)
+        final = deduped[:TOP_K_RERANK]
+        trace["candidate_counts"]["final"] = len(final)
+        trace["top_candidates"] = self._candidate_trace(final, limit=10)
+
+        return final, trace
+
+    def retrieve(self, query: str, category_hint: str | None = None) -> List[dict]:
+        hits, _ = self.retrieve_with_trace(query, category_hint=category_hint)
+        return hits
