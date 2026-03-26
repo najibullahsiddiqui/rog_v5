@@ -61,6 +61,66 @@
             </span>
             <span class="menu-text">Feedback</span>
           </button>
+
+          <button class="menu-item" type="button" data-section="sources">
+            <span class="menu-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M4 7h16M4 12h16M4 17h16"></path>
+              </svg>
+            </span>
+            <span class="menu-text">Data Sources</span>
+          </button>
+
+          <button class="menu-item" type="button" data-section="json-convert">
+            <span class="menu-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"></path>
+              </svg>
+            </span>
+            <span class="menu-text">JSON Convert</span>
+          </button>
+
+          <button class="menu-item" type="button" data-section="qna-pairs">
+            <span class="menu-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+              </svg>
+            </span>
+            <span class="menu-text">Q&A Pairs</span>
+          </button>
+
+          <button class="menu-item" type="button" data-section="categories">
+            <span class="menu-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M5 3h14a2 2 0 012 2v4H3V5a2 2 0 012-2zm-2 8h18v8a2 2 0 01-2 2H5a2 2 0 01-2-2v-8z"></path>
+              </svg>
+            </span>
+            <span class="menu-text">Categories</span>
+          </button>
+
+          <button class="menu-item" type="button" data-section="decision-trees">
+            <span class="menu-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M4 6h6v6H4zM14 4h6v4h-6zM14 16h6v4h-6zM10 9h4m-2 0v7"></path>
+              </svg>
+            </span>
+            <span class="menu-text">Decision Trees</span>
+          </button>
+
+          <button class="menu-item" type="button" data-section="train-bot">
+            <span class="menu-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9.75 3a1.5 1.5 0 00-1.5 1.5V6H6.75A1.75 1.75 0 005 7.75v8.5C5 17.216 5.784 18 6.75 18h10.5c.966 0 1.75-.784 1.75-1.75v-8.5A1.75 1.75 0 0017.25 6h-1.5V4.5A1.5 1.5 0 0014.25 3h-4.5zM9 10h6M9 13h6"></path>
+              </svg>
+            </span>
+            <span class="menu-text">Train Bot</span>
+          </button>
         </nav>
       </div>
 
@@ -200,6 +260,276 @@
 
           <div class="chips-row" id="chipsFeedback"></div>
           <div id="feedbackTable" class="table-wrap"></div>
+        </div>
+      </section>
+
+      <section id="section-sources" class="section-block view-section hidden-view">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>Data Sources</h2>
+              <p class="panel-subtitle">Manage approved ingestion sources and reindex workflows.</p>
+            </div>
+          </div>
+
+          <div class="panel-actions" style="margin-bottom: 12px;">
+            <input id="sourceName" type="text" placeholder="Source name" />
+            <select id="sourceType">
+              <option value="manual_upload">manual</option>
+              <option value="pdf_folder">pdf</option>
+              <option value="api">json/api</option>
+              <option value="database">text/db</option>
+              <option value="s3">s3</option>
+              <option value="gdrive">gdrive</option>
+            </select>
+            <input id="sourceUri" type="text" placeholder="URI/path (optional)" />
+            <input id="sourceFormat" type="text" placeholder="format: pdf/json/text/faq/manual" />
+            <button id="addSourceBtn" class="btn btn-primary" type="button">Add Source</button>
+          </div>
+
+          <div id="sourcesTable" class="table-wrap"></div>
+        </div>
+
+        <div class="panel mt-18">
+          <div class="panel-header">
+            <div>
+              <h2>Source Documents</h2>
+              <p class="panel-subtitle">Documents for selected source (version/hash/chunks).</p>
+            </div>
+          </div>
+          <div id="sourceDocumentsTable" class="table-wrap"></div>
+        </div>
+      </section>
+
+      <section id="section-json-convert" class="section-block view-section hidden-view">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>Convert JSON</h2>
+              <p class="panel-subtitle">Upload or paste JSON, validate, preview mapping, then import records.</p>
+            </div>
+          </div>
+
+          <div class="panel-actions" style="margin-bottom: 12px;">
+            <select id="jsonConvertTarget">
+              <option value="qna_pairs">Q&A pairs</option>
+              <option value="categories">Categories</option>
+              <option value="decision_trees">Decision trees</option>
+              <option value="knowledge_docs">Knowledge docs</option>
+            </select>
+            <input id="jsonFileInput" type="file" accept=".json,application/json" />
+          </div>
+
+          <textarea id="jsonConvertInput" rows="12" placeholder="Paste JSON here..."></textarea>
+
+          <div class="panel-actions" style="margin-top: 12px;">
+            <button id="previewJsonBtn" class="btn btn-secondary" type="button">Preview & Validate</button>
+            <button id="importJsonBtn" class="btn btn-primary" type="button">Import</button>
+          </div>
+
+          <div class="panel mt-18">
+            <div class="panel-header">
+              <div>
+                <h2>Field Mapping Preview</h2>
+              </div>
+            </div>
+            <div id="jsonMappingFields" class="table-wrap"></div>
+            <div id="jsonPreviewTable" class="table-wrap mt-18"></div>
+            <div id="jsonErrorsBox" class="table-wrap mt-18"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="section-qna-pairs" class="section-block view-section hidden-view">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>Q&A Pairs</h2>
+              <p class="panel-subtitle">Manage approved Q&A memory with full CRUD and flags.</p>
+            </div>
+          </div>
+          <div class="panel-actions" style="margin-bottom: 12px;">
+            <input id="qnaSearchInput" type="text" placeholder="Search question/answer/source note" />
+            <select id="qnaStatusFilter">
+              <option value="active">active</option>
+              <option value="archived">archived</option>
+              <option value="">all</option>
+            </select>
+            <select id="qnaApprovalFilter">
+              <option value="approved">approved</option>
+              <option value="pending">pending</option>
+              <option value="rejected">rejected</option>
+              <option value="">all</option>
+            </select>
+            <button id="qnaRefreshBtn" class="btn btn-secondary" type="button">Refresh Q&A</button>
+          </div>
+
+          <div id="qnaPairsTable" class="table-wrap"></div>
+        </div>
+
+        <div class="panel mt-18">
+          <div class="panel-header">
+            <div>
+              <h2>Create / Edit Q&A Pair</h2>
+            </div>
+          </div>
+          <input id="qnaEditId" type="hidden" />
+          <div class="form-group">
+            <label for="qnaQuestionInput">Question</label>
+            <input id="qnaQuestionInput" type="text" placeholder="Question" />
+          </div>
+          <div class="form-group">
+            <label for="qnaAnswerInput">Answer</label>
+            <textarea id="qnaAnswerInput" rows="5" placeholder="Answer"></textarea>
+          </div>
+          <div class="panel-actions">
+            <input id="qnaCategoryInput" type="text" placeholder="category code (optional)" />
+            <input id="qnaSourceNoteInput" type="text" placeholder="source note (optional)" />
+            <input id="qnaPriorityInput" type="number" placeholder="priority" value="0" />
+            <select id="qnaApprovalInput">
+              <option value="approved">approved</option>
+              <option value="pending">pending</option>
+              <option value="rejected">rejected</option>
+            </select>
+            <label><input id="qnaExactFlag" type="checkbox" checked /> exact</label>
+            <label><input id="qnaSemanticFlag" type="checkbox" checked /> semantic</label>
+          </div>
+          <div class="panel-actions" style="margin-top:12px;">
+            <button id="qnaSaveBtn" class="btn btn-primary" type="button">Save Q&A</button>
+            <button id="qnaClearBtn" class="btn btn-secondary" type="button">Clear</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="section-categories" class="section-block view-section hidden-view">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>Categories</h2>
+              <p class="panel-subtitle">Manage routing categories, synonyms, scope, and ordering.</p>
+            </div>
+          </div>
+          <div class="panel-actions" style="margin-bottom:12px;">
+            <button id="categoriesRefreshBtn" class="btn btn-secondary" type="button">Refresh Categories</button>
+          </div>
+          <div id="categoriesTable" class="table-wrap"></div>
+          <div id="categoriesStatsTable" class="table-wrap mt-18"></div>
+        </div>
+
+        <div class="panel mt-18">
+          <div class="panel-header"><h2>Create / Edit Category</h2></div>
+          <input id="categoryEditId" type="hidden" />
+          <div class="panel-actions">
+            <input id="categoryCodeInput" type="text" placeholder="code" />
+            <input id="categoryNameInput" type="text" placeholder="name" />
+            <input id="categoryOrderInput" type="number" placeholder="display order" value="0" />
+            <label><input id="categoryActiveInput" type="checkbox" checked /> active</label>
+          </div>
+          <div class="form-group">
+            <label for="categoryDescriptionInput">Description</label>
+            <textarea id="categoryDescriptionInput" rows="3"></textarea>
+          </div>
+          <div class="panel-actions">
+            <input id="categoryRoutingHintInput" type="text" placeholder="routing hint (optional)" />
+            <input id="categoryPromptHintInput" type="text" placeholder="prompt hint (optional)" />
+          </div>
+          <div class="form-group">
+            <label for="categoryScopeInput">Retrieval scope JSON (e.g. {"doc_names":["FAQ-PATENTS.pdf"]})</label>
+            <textarea id="categoryScopeInput" rows="3">{}</textarea>
+          </div>
+          <div class="panel-actions">
+            <input id="categorySynonymInput" type="text" placeholder="synonym to add (optional)" />
+            <button id="categoryAddSynonymBtn" class="btn btn-secondary" type="button">Add Synonym</button>
+            <button id="categorySaveBtn" class="btn btn-primary" type="button">Save Category</button>
+            <button id="categoryClearBtn" class="btn btn-secondary" type="button">Clear</button>
+          </div>
+          <div id="categorySynonymsTable" class="table-wrap mt-18"></div>
+        </div>
+      </section>
+
+      <section id="section-decision-trees" class="section-block view-section hidden-view">
+        <div class="panel">
+          <div class="panel-header"><h2>Decision Trees</h2></div>
+          <div class="panel-actions">
+            <button id="treesRefreshBtn" class="btn btn-secondary" type="button">Refresh Trees</button>
+          </div>
+          <div id="decisionTreesTable" class="table-wrap mt-18"></div>
+        </div>
+
+        <div class="panel mt-18">
+          <div class="panel-header"><h2>Create / Edit Tree</h2></div>
+          <input id="treeEditId" type="hidden" />
+          <div class="panel-actions">
+            <input id="treeNameInput" type="text" placeholder="Tree name" />
+            <input id="treeKeyInput" type="text" placeholder="tree_key (optional)" />
+            <input id="treeCategoryInput" type="text" placeholder="category code (optional)" />
+            <label><input id="treeActiveInput" type="checkbox" checked /> active</label>
+          </div>
+          <div class="panel-actions">
+            <input id="treeVersionInput" type="text" placeholder="version" value="1.0.0" />
+            <input id="treeStatusInput" type="text" placeholder="status" value="draft" />
+            <input id="treeTriggersInput" type="text" placeholder="trigger phrases (comma separated)" />
+          </div>
+          <div class="form-group">
+            <label for="treeDescriptionInput">Description</label>
+            <textarea id="treeDescriptionInput" rows="2"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="treeNodesJsonInput">Nodes JSON</label>
+            <textarea id="treeNodesJsonInput" rows="8" placeholder='[{"node_key":"start","prompt_text":"...","is_terminal":false}]'></textarea>
+          </div>
+          <div class="form-group">
+            <label for="treeEdgesJsonInput">Edges JSON</label>
+            <textarea id="treeEdgesJsonInput" rows="8" placeholder='[{"from_node_key":"start","to_node_key":"end","condition_value":"yes"}]'></textarea>
+          </div>
+          <div class="panel-actions">
+            <button id="treeSaveBtn" class="btn btn-primary" type="button">Save Tree</button>
+            <button id="treeClearBtn" class="btn btn-secondary" type="button">Clear</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="section-train-bot" class="section-block view-section hidden-view">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>Train Bot Workflow Hub</h2>
+              <p class="panel-subtitle">Review unresolved/wrong-answer queue and run real admin training actions.</p>
+            </div>
+            <div class="panel-actions">
+              <button id="trainBotRefreshBtn" class="btn btn-secondary" type="button">Refresh Hub</button>
+            </div>
+          </div>
+          <div id="trainBotQueueTable" class="table-wrap"></div>
+        </div>
+
+        <div class="panel mt-18">
+          <div class="panel-header">
+            <div>
+              <h2>Train Bot Actions</h2>
+            </div>
+          </div>
+          <div class="toolbar">
+            <button id="trainBotActionPromoteExpertBtn" class="btn btn-primary" type="button">Promote to Expert</button>
+            <button id="trainBotActionPromoteQnaBtn" class="btn btn-secondary" type="button">Promote to Q&A</button>
+            <button id="trainBotActionResolveWrongBtn" class="btn btn-secondary" type="button">Resolve Wrong Report</button>
+            <button id="trainBotActionReindexBtn" class="btn btn-secondary" type="button">Trigger Source Reindex</button>
+            <button id="trainBotActionCategoryRefreshBtn" class="btn btn-secondary" type="button">Category Refresh</button>
+            <button id="trainBotActionThresholdRefreshBtn" class="btn btn-secondary" type="button">Threshold Refresh</button>
+          </div>
+          <p class="panel-subtitle">
+            Select one queue row first. For promote actions, answer/category values are prompted interactively.
+          </p>
+        </div>
+
+        <div class="panel mt-18">
+          <div class="panel-header"><h2>Training Jobs</h2></div>
+          <div id="trainBotJobsTable" class="table-wrap"></div>
+        </div>
+
+        <div class="panel mt-18">
+          <div class="panel-header"><h2>Completed Actions Audit</h2></div>
+          <div id="trainBotAuditTable" class="table-wrap"></div>
         </div>
       </section>
     </main>
