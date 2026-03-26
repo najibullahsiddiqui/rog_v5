@@ -38,6 +38,7 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 pipeline: QAPipeline | None = None
 logger = logging.getLogger(__name__)
+ADMIN_SESSION_MAX_AGE_SECONDS = 60 * 60 * 12
 
 
 def get_pipeline() -> QAPipeline:
@@ -96,6 +97,9 @@ async def admin_login(request: Request):
         value=session_cookie_value(),
         httponly=True,
         samesite="lax",
+        secure=(request.url.scheme == "https"),
+        max_age=ADMIN_SESSION_MAX_AGE_SECONDS,
+        path="/",
     )
     return response
 

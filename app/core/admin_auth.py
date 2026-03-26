@@ -21,12 +21,16 @@ def is_valid_admin_token(token: str | None) -> bool:
 
 
 def session_cookie_value() -> str:
-    return _token_hash((ADMIN_TOKEN or "").strip())
+    token = (ADMIN_TOKEN or "").strip()
+    if not token:
+        return ""
+    return _token_hash(token)
 
 
 def is_admin_authorized(request: Request) -> bool:
+    expected_cookie = session_cookie_value()
     cookie_value = (request.cookies.get(ADMIN_SESSION_COOKIE) or "").strip()
-    if cookie_value and hmac.compare_digest(cookie_value, session_cookie_value()):
+    if expected_cookie and cookie_value and hmac.compare_digest(cookie_value, expected_cookie):
         return True
 
     header_token = (request.headers.get("x-admin-token") or "").strip()
