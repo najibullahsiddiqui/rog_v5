@@ -92,6 +92,17 @@ const trainBotActionResolveWrongBtn = document.getElementById("trainBotActionRes
 const trainBotActionReindexBtn = document.getElementById("trainBotActionReindexBtn");
 const trainBotActionCategoryRefreshBtn = document.getElementById("trainBotActionCategoryRefreshBtn");
 const trainBotActionThresholdRefreshBtn = document.getElementById("trainBotActionThresholdRefreshBtn");
+const chatHistoryDateFrom = document.getElementById("chatHistoryDateFrom");
+const chatHistoryDateTo = document.getElementById("chatHistoryDateTo");
+const chatHistoryCategory = document.getElementById("chatHistoryCategory");
+const chatHistoryResponseMode = document.getElementById("chatHistoryResponseMode");
+const chatHistoryFeedbackStatus = document.getElementById("chatHistoryFeedbackStatus");
+const chatHistoryApplyFiltersBtn = document.getElementById("chatHistoryApplyFiltersBtn");
+const chatHistoryExportBtn = document.getElementById("chatHistoryExportBtn");
+const chatHistorySessionsTable = document.getElementById("chatHistorySessionsTable");
+const chatHistoryTranscript = document.getElementById("chatHistoryTranscript");
+const chatHistoryAdminNote = document.getElementById("chatHistoryAdminNote");
+const chatHistorySaveNoteBtn = document.getElementById("chatHistorySaveNoteBtn");
 
 const expertModal = document.getElementById("expertModal");
 const modalOverlay = document.getElementById("modalOverlay");
@@ -130,6 +141,9 @@ const state = {
   trainBotJobs: [],
   trainBotAudit: [],
   trainBotSelected: null,
+  chatHistorySessions: [],
+  chatHistorySelectedSessionId: null,
+  chatHistoryDetail: null,
 };
 
 function escapeHtml(text) {
@@ -588,6 +602,132 @@ function selectTrainBotItem(queueType, id) {
   const item = (state.trainBotQueue || []).find((x) => x.queue_type === queueType && Number(x.id) === Number(id));
   state.trainBotSelected = item || null;
   renderTrainBotHub();
+}
+
+function chatHistoryFilterQuery() {
+  const params = new URLSearchParams();
+  if (chatHistoryDateFrom?.value) params.set("date_from", chatHistoryDateFrom.value);
+  if (chatHistoryDateTo?.value) params.set("date_to", chatHistoryDateTo.value);
+  if ((chatHistoryCategory?.value || "").trim()) params.set("category", chatHistoryCategory.value.trim());
+  if ((chatHistoryResponseMode?.value || "").trim()) params.set("response_mode", chatHistoryResponseMode.value.trim());
+  if ((chatHistoryFeedbackStatus?.value || "").trim()) params.set("feedback_status", chatHistoryFeedbackStatus.value.trim());
+  params.set("limit", "200");
+  return params.toString();
+}
+
+function buildChatHistorySessionsTable(items) {
+  if (!items.length) return `<div class="empty-state">No chat sessions found for selected filters.</div>`;
+  return `
+    <table class="admin-table">
+      <thead><tr><th>Open</th><th>ID</th><th>Session Key</th><th>Status</th><th>Started</th><th>Messages</th><th>Answers</th><th>Feedback</th><th>Unsatisfied</th><th>Wrong Open</th><th>Last Message</th></tr></thead>
+      <tbody>
+      ${items.map((s) => `
+        <tr>
+          <td><button class="action-btn" onclick="openChatHistorySession(${Number(s.id)})">View</button></td>
+          <td>${escapeHtml(s.id)}</td>
+          <td>${escapeHtml(s.session_key || "")}</td>
+          <td>${escapeHtml(s.status || "")}</td>
+          <td>${escapeHtml(s.started_at || "")}</td>
+          <td>${escapeHtml(s.message_count || 0)}</td>
+          <td>${escapeHtml(s.answer_count || 0)}</td>
+          <td>${escapeHtml(s.feedback_count || 0)}</td>
+          <td>${escapeHtml(s.unsatisfied_count || 0)}</td>
+          <td>${escapeHtml(s.wrong_answer_open_count || 0)}</td>
+          <td>${escapeHtml(s.last_message_at || "—")}</td>
+        </tr>
+      `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function buildChatTranscript(detail) {
+  if (!detail || !detail.transcript || !detail.transcript.length) {
+    return `<div class="empty-state">No transcript available for this session.</div>`;
+  }
+  return `
+    <table class="admin-table">
+      <thead><tr><th>Message ID</th><th>Time</th><th>User Query</th><th>Bot Answer</th><th>Response Mode</th><th>Category</th><th>Confidence</th><th>Citations / Evidence</th><th>Feedback / Wrong Flags</th></tr></thead>
+      <tbody>
+      ${detail.transcript.map((m) => `
+        <tr>
+          <td>${escapeHtml(m.id)}</td>
+          <td>${escapeHtml(m.created_at || "")}</td>
+          <td class="question-cell">${escapeHtml(m.question_text || "—")}</td>
+          <td class="question-cell">${escapeHtml(m.answer_text || "—")}</td>
+          <td>${escapeHtml(m.answer_mode || "—")}</td>
+          <td>${escapeHtml(m.category_code || "—")}</td>
+          <td>${escapeHtml(m.confidence ?? "—")}</td>
+          <td>
+            <div><strong>Citations:</strong><pre>${escapeHtml(JSON.stringify(m.citations || [], null, 2))}</pre></div>
+            <div><strong>Evidence:</strong><pre>${escapeHtml(JSON.stringify(m.evidence || [], null, 2))}</pre></div>
+          </td>
+          <td>
+            <div><strong>Feedback:</strong><pre>${escapeHtml(JSON.stringify(m.feedback || [], null, 2))}</pre></div>
+            <div><strong>Wrong reports:</strong><pre>${escapeHtml(JSON.stringify(m.wrong_answer_reports || [], null, 2))}</pre></div>
+          </td>
+        </tr>
+      `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderChatHistory() {
+  if (chatHistorySessionsTable) {
+    chatHistorySessionsTable.innerHTML = buildChatHistorySessionsTable(state.chatHistorySessions || []);
+  }
+  if (chatHistoryTranscript) {
+    chatHistoryTranscript.innerHTML = buildChatTranscript(state.chatHistoryDetail);
+  }
+  if (chatHistoryAdminNote) {
+    chatHistoryAdminNote.value = state.chatHistoryDetail?.session?.admin_note || "";
+  }
+}
+
+async function loadChatHistorySessions() {
+  const query = chatHistoryFilterQuery();
+  const res = await fetch(`/api/admin/chat-history/sessions?${query}`);
+  const data = await res.json();
+  state.chatHistorySessions = data.items || [];
+  renderChatHistory();
+}
+
+async function openChatHistorySession(sessionId) {
+  state.chatHistorySelectedSessionId = Number(sessionId);
+  const res = await fetch(`/api/admin/chat-history/sessions/${state.chatHistorySelectedSessionId}`);
+  const data = await res.json();
+  if (!res.ok) {
+    alert(data.detail || "Failed to load session detail.");
+    return;
+  }
+  state.chatHistoryDetail = data.item || null;
+  renderChatHistory();
+}
+
+async function saveChatHistoryNote() {
+  if (!state.chatHistorySelectedSessionId) {
+    alert("Open a session first.");
+    return;
+  }
+  const note = (chatHistoryAdminNote?.value || "").trim();
+  const res = await fetch(`/api/admin/chat-history/sessions/${state.chatHistorySelectedSessionId}/note`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ admin_note: note }),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    alert(data.detail || "Failed to save note.");
+    return;
+  }
+  await loadChatHistorySessions();
+  await openChatHistorySession(state.chatHistorySelectedSessionId);
+}
+
+function exportChatHistory() {
+  const query = chatHistoryFilterQuery();
+  window.open(`/api/admin/export/chat-history?${query}`, "_blank");
 }
 
 function buildQnaPairsTable(items) {
@@ -1421,7 +1561,7 @@ async function refreshAll() {
   refreshBtn.innerHTML = `<span>↻</span><span>Refreshing...</span>`;
 
   try {
-    await Promise.all([loadSummary(), loadUnresolved(), loadFeedback(), loadDataSources(), loadQnaPairs(), loadCategories(), loadDecisionTrees()]);
+    await Promise.all([loadSummary(), loadUnresolved(), loadFeedback(), loadDataSources(), loadQnaPairs(), loadCategories(), loadDecisionTrees(), loadChatHistorySessions()]);
     await loadTrainBotHub();
   } catch (error) {
     console.error(error);
@@ -1528,6 +1668,7 @@ window.loadCategorySynonyms = loadCategorySynonyms;
 window.editDecisionTree = editDecisionTree;
 window.deleteDecisionTree = deleteDecisionTree;
 window.selectTrainBotItem = selectTrainBotItem;
+window.openChatHistorySession = openChatHistorySession;
 
 refreshBtn.addEventListener("click", refreshAll);
 
@@ -1558,6 +1699,9 @@ if (trainBotActionResolveWrongBtn) trainBotActionResolveWrongBtn.addEventListene
 if (trainBotActionReindexBtn) trainBotActionReindexBtn.addEventListener("click", trainBotTriggerReindex);
 if (trainBotActionCategoryRefreshBtn) trainBotActionCategoryRefreshBtn.addEventListener("click", trainBotCategoryRefresh);
 if (trainBotActionThresholdRefreshBtn) trainBotActionThresholdRefreshBtn.addEventListener("click", trainBotThresholdRefresh);
+if (chatHistoryApplyFiltersBtn) chatHistoryApplyFiltersBtn.addEventListener("click", loadChatHistorySessions);
+if (chatHistoryExportBtn) chatHistoryExportBtn.addEventListener("click", exportChatHistory);
+if (chatHistorySaveNoteBtn) chatHistorySaveNoteBtn.addEventListener("click", saveChatHistoryNote);
 if (jsonFileInput) {
   jsonFileInput.addEventListener("change", async (event) => {
     const file = event.target.files && event.target.files[0];

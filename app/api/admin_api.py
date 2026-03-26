@@ -12,6 +12,7 @@ from openpyxl import Workbook
 from app.schemas import (
     CategoryPayload,
     CategorySynonymPayload,
+    ChatSessionNotePayload,
     DataSourceCreatePayload,
     DataSourceStatusPayload,
     ExpertAnswerPayload,
@@ -83,6 +84,43 @@ def get_unresolved(
 def get_feedback(category: str | None = Query(default=None)):
     norm = categories_service.normalize(category) if category else None
     return {"items": admin_repository.list_feedback(norm)}
+
+
+@router.get("/api/admin/chat-history/sessions")
+def list_chat_history_sessions(
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
+    category: str | None = Query(default=None),
+    response_mode: str | None = Query(default=None),
+    feedback_status: str | None = Query(default=None),
+    limit: int = Query(default=200, ge=1, le=1000),
+):
+    return {
+        "items": admin_repository.list_chat_sessions(
+            date_from=date_from,
+            date_to=date_to,
+            category_code=categories_service.normalize(category) if category else None,
+            response_mode=response_mode,
+            feedback_status=feedback_status,
+            limit=limit,
+        )
+    }
+
+
+@router.get("/api/admin/chat-history/sessions/{session_id}")
+def get_chat_history_session_detail(session_id: int):
+    item = admin_repository.get_chat_session_detail(session_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"item": item}
+
+
+@router.post("/api/admin/chat-history/sessions/{session_id}/note")
+def update_chat_history_session_note(session_id: int, payload: ChatSessionNotePayload):
+    ok = admin_repository.update_chat_session_note(session_id, payload.admin_note)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"ok": True}
 
 
 @router.get("/api/admin/train-bot/queue")
@@ -589,4 +627,62 @@ def export_feedback(category: str | None = Query(default=None)):
         headers={
             "Content-Disposition": "attachment; filename=user_feedback.xlsx"
         },
+    )
+
+
+@router.get("/api/admin/export/chat-history")
+def export_chat_history(
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
+    category: str | None = Query(default=None),
+    response_mode: str | None = Query(default=None),
+    feedback_status: str | None = Query(default=None),
+):
+    items = admin_repository.list_chat_sessions(
+        date_from=date_from,
+        date_to=date_to,
+        category_code=categories_service.normalize(category) if category else None,
+        response_mode=response_mode,
+        feedback_status=feedback_status,
+        limit=1000,
+    )
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Chat Sessions"
+    ws.append([
+        "Session ID",
+        "Session Key",
+        "Status",
+        "Started At",
+        "Ended At",
+        "Messages",
+        "Answers",
+        "Feedback",
+        "Unsatisfied",
+        "Wrong Reports Open",
+        "Admin Note",
+    ])
+    for item in items:
+        ws.append([
+            item.get("id"),
+            item.get("session_key"),
+            item.get("status"),
+            item.get("started_at"),
+            item.get("ended_at"),
+            item.get("message_count"),
+            item.get("answer_count"),
+            item.get("feedback_count"),
+            item.get("unsatisfied_count"),
+            item.get("wrong_answer_open_count"),
+            item.get("admin_note"),
+        ])
+
+    stream = io.BytesIO()
+    wb.save(stream)
+    stream.seek(0)
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=chat_history_sessions.xlsx"},
     )

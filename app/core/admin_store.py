@@ -2038,6 +2038,236 @@ class AdminStore:
             )
         return {"report_id": report_id, "audit_log_id": audit_id}
 
+    def list_chat_sessions(
+        self,
+        *,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        category_code: str | None = None,
+        response_mode: str | None = None,
+        feedback_status: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        where: list[str] = ["1=1"]
+        params: list[Any] = []
+        if date_from:
+            where.append("datetime(cs.started_at) >= datetime(?)")
+            params.append(date_from)
+        if date_to:
+            where.append("datetime(cs.started_at) <= datetime(?)")
+            params.append(date_to)
+        if category_code:
+            where.append(
+                """
+                EXISTS (
+                    SELECT 1 FROM chat_messages cm2
+                    LEFT JOIN categories c2 ON c2.id = cm2.category_id
+                    WHERE cm2.session_id = cs.id
+                      AND COALESCE(c2.code, '') = ?
+                )
+                """
+            )
+            params.append(category_code)
+        if response_mode:
+            where.append(
+                """
+                EXISTS (
+                    SELECT 1 FROM chat_messages cm3
+                    WHERE cm3.session_id = cs.id
+                      AND COALESCE(cm3.answer_mode, '') = ?
+                )
+                """
+            )
+            params.append(response_mode)
+        if feedback_status == "satisfied":
+            where.append(
+                "EXISTS (SELECT 1 FROM user_feedback uf WHERE uf.session_id=cs.id AND uf.satisfied=1)"
+            )
+        elif feedback_status == "unsatisfied":
+            where.append(
+                "EXISTS (SELECT 1 FROM user_feedback uf WHERE uf.session_id=cs.id AND uf.satisfied=0)"
+            )
+        elif feedback_status == "none":
+            where.append("NOT EXISTS (SELECT 1 FROM user_feedback uf WHERE uf.session_id=cs.id)")
+
+        query = f"""
+            SELECT
+                cs.id,
+                cs.session_key,
+                cs.user_key,
+                cs.channel,
+                cs.status,
+                cs.started_at,
+                cs.ended_at,
+                cs.metadata_json,
+                COUNT(cm.id) AS message_count,
+                SUM(CASE WHEN cm.answer_text IS NOT NULL AND cm.answer_text <> '' THEN 1 ELSE 0 END) AS answer_count,
+                SUM(CASE WHEN uf.id IS NOT NULL THEN 1 ELSE 0 END) AS feedback_count,
+                SUM(CASE WHEN uf.satisfied=0 THEN 1 ELSE 0 END) AS unsatisfied_count,
+                SUM(CASE WHEN wr.id IS NOT NULL AND wr.status='open' THEN 1 ELSE 0 END) AS wrong_answer_open_count,
+                MAX(cm.created_at) AS last_message_at
+            FROM chat_sessions cs
+            LEFT JOIN chat_messages cm ON cm.session_id = cs.id
+            LEFT JOIN user_feedback uf ON uf.message_id = cm.id
+            LEFT JOIN wrong_answer_reports wr ON wr.message_id = cm.id
+            WHERE {' AND '.join(where)}
+            GROUP BY cs.id
+            ORDER BY cs.id DESC
+            LIMIT ?
+        """
+        params.append(max(1, min(limit, 1000)))
+        with self._conn() as conn:
+            rows = conn.execute(query, params).fetchall()
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["metadata"] = json.loads(item.get("metadata_json") or "{}")
+            item["admin_note"] = str(item["metadata"].get("admin_note") or "")
+            items.append(item)
+        return items
+
+    def get_chat_session_detail(self, session_id: int) -> dict[str, Any] | None:
+        with self._conn() as conn:
+            session_row = conn.execute(
+                """
+                SELECT id, session_key, user_key, channel, status, started_at, ended_at, metadata_json
+                FROM chat_sessions
+                WHERE id=?
+                LIMIT 1
+                """,
+                (session_id,),
+            ).fetchone()
+            if not session_row:
+                return None
+
+            message_rows = conn.execute(
+                """
+                SELECT
+                    cm.id,
+                    cm.session_id,
+                    cm.role,
+                    cm.question_text,
+                    cm.normalized_question,
+                    cm.answer_text,
+                    cm.answer_mode,
+                    COALESCE(c.code, 'unassigned') AS category_code,
+                    q.confidence_score AS confidence,
+                    cm.evidence_json,
+                    cm.created_at
+                FROM chat_messages cm
+                LEFT JOIN categories c ON c.id = cm.category_id
+                LEFT JOIN qna_pairs q ON q.id = cm.qna_pair_id
+                WHERE cm.session_id=?
+                ORDER BY cm.id ASC
+                """,
+                (session_id,),
+            ).fetchall()
+
+            feedback_rows = conn.execute(
+                """
+                SELECT id, message_id, satisfied, comment, status, created_at
+                FROM user_feedback
+                WHERE session_id=?
+                ORDER BY id DESC
+                """,
+                (session_id,),
+            ).fetchall()
+            feedback_by_message: dict[int, list[dict[str, Any]]] = {}
+            for row in feedback_rows:
+                r = dict(row)
+                feedback_by_message.setdefault(int(r["message_id"] or 0), []).append(r)
+
+            wrong_rows = conn.execute(
+                """
+                SELECT id, message_id, reason_code, report_text, severity, status, admin_action, action_notes, created_at, resolved_at
+                FROM wrong_answer_reports
+                WHERE session_id=?
+                ORDER BY id DESC
+                """,
+                (session_id,),
+            ).fetchall()
+            wrong_by_message: dict[int, list[dict[str, Any]]] = {}
+            for row in wrong_rows:
+                r = dict(row)
+                wrong_by_message.setdefault(int(r["message_id"] or 0), []).append(r)
+
+            citation_rows = conn.execute(
+                """
+                SELECT
+                    mc.message_id,
+                    mc.id,
+                    mc.page_no,
+                    mc.excerpt,
+                    mc.score,
+                    sd.file_name,
+                    sd.doc_key
+                FROM message_citations mc
+                LEFT JOIN source_documents sd ON sd.id = mc.source_document_id
+                WHERE mc.message_id IN (
+                    SELECT id FROM chat_messages WHERE session_id=?
+                )
+                ORDER BY mc.id ASC
+                """,
+                (session_id,),
+            ).fetchall()
+            citations_by_message: dict[int, list[dict[str, Any]]] = {}
+            for row in citation_rows:
+                r = dict(row)
+                citations_by_message.setdefault(int(r["message_id"] or 0), []).append(r)
+
+        session = dict(session_row)
+        session["metadata"] = json.loads(session.get("metadata_json") or "{}")
+        session["admin_note"] = str(session["metadata"].get("admin_note") or "")
+
+        transcript: list[dict[str, Any]] = []
+        for row in message_rows:
+            item = dict(row)
+            evidence = json.loads(item.get("evidence_json") or "[]") if item.get("evidence_json") else []
+            parsed_confidence = item.get("confidence")
+            if parsed_confidence is None and isinstance(evidence, list) and evidence:
+                first = evidence[0] if isinstance(evidence[0], dict) else {}
+                parsed_confidence = first.get("score")
+            message_id = int(item["id"])
+            item["confidence"] = parsed_confidence
+            item["evidence"] = evidence
+            item["citations"] = citations_by_message.get(message_id, [])
+            item["feedback"] = feedback_by_message.get(message_id, [])
+            item["wrong_answer_reports"] = wrong_by_message.get(message_id, [])
+            transcript.append(item)
+
+        return {
+            "session": session,
+            "transcript": transcript,
+        }
+
+    def update_chat_session_note(self, session_id: int, admin_note: str) -> bool:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT metadata_json FROM chat_sessions WHERE id=? LIMIT 1",
+                (session_id,),
+            ).fetchone()
+            if not row:
+                return False
+            metadata = json.loads(row["metadata_json"] or "{}")
+            metadata["admin_note"] = admin_note
+            cur = conn.execute(
+                """
+                UPDATE chat_sessions
+                SET metadata_json=?, updated_at=CURRENT_TIMESTAMP
+                WHERE id=?
+                """,
+                (json.dumps(metadata, ensure_ascii=False), session_id),
+            )
+            if cur.rowcount > 0:
+                self._insert_audit_log(
+                    conn,
+                    action="update_chat_session_note",
+                    entity_type="chat_sessions",
+                    entity_id=session_id,
+                    metadata={"admin_note": admin_note},
+                )
+            return cur.rowcount > 0
+
     def _table_exists(self, conn: sqlite3.Connection, table: str) -> bool:
         row = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name=?",

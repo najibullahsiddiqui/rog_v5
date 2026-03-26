@@ -121,3 +121,7 @@ class TrainBotResolveWrongAnswerPayload(BaseModel):
     report_id: int
     admin_action: str
     action_notes: str | None = None
+
+
+class ChatSessionNotePayload(BaseModel):
+    admin_note: str

@@ -121,6 +121,16 @@
             </span>
             <span class="menu-text">Train Bot</span>
           </button>
+
+          <button class="menu-item" type="button" data-section="chat-history">
+            <span class="menu-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M8 10h8M8 14h5M6 4h12a2 2 0 012 2v12l-4-3H6a2 2 0 01-2-2V6a2 2 0 012-2z"></path>
+              </svg>
+            </span>
+            <span class="menu-text">Chat History</span>
+          </button>
         </nav>
       </div>
 
@@ -530,6 +540,46 @@
         <div class="panel mt-18">
           <div class="panel-header"><h2>Completed Actions Audit</h2></div>
           <div id="trainBotAuditTable" class="table-wrap"></div>
+        </div>
+      </section>
+
+      <section id="section-chat-history" class="section-block view-section hidden-view">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>Chat Sessions</h2>
+              <p class="panel-subtitle">Inspect full transcripts, response mode, evidence, citations, and feedback traces.</p>
+            </div>
+            <div class="panel-actions">
+              <button id="chatHistoryApplyFiltersBtn" class="btn btn-primary" type="button">Apply Filters</button>
+              <button id="chatHistoryExportBtn" class="btn btn-secondary" type="button">Export</button>
+            </div>
+          </div>
+          <div class="panel-actions">
+            <input id="chatHistoryDateFrom" type="date" />
+            <input id="chatHistoryDateTo" type="date" />
+            <input id="chatHistoryCategory" type="text" placeholder="Category code" />
+            <input id="chatHistoryResponseMode" type="text" placeholder="Response mode" />
+            <select id="chatHistoryFeedbackStatus">
+              <option value="">Any feedback</option>
+              <option value="satisfied">Satisfied</option>
+              <option value="unsatisfied">Unsatisfied</option>
+              <option value="none">No feedback</option>
+            </select>
+          </div>
+          <div id="chatHistorySessionsTable" class="table-wrap mt-18"></div>
+        </div>
+
+        <div class="panel mt-18">
+          <div class="panel-header"><h2>Session Detail</h2></div>
+          <div class="form-group">
+            <label for="chatHistoryAdminNote">Admin Note</label>
+            <textarea id="chatHistoryAdminNote" rows="3" placeholder="Add investigation note for selected session..."></textarea>
+          </div>
+          <div class="panel-actions">
+            <button id="chatHistorySaveNoteBtn" class="btn btn-secondary" type="button">Save Note</button>
+          </div>
+          <div id="chatHistoryTranscript" class="table-wrap mt-18"></div>
         </div>
       </section>
     </main>
