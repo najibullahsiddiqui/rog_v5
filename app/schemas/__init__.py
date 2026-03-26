@@ -16,6 +16,10 @@ from app.schemas.admin import (
     TrainBotReindexPayload,
     TrainBotResolveWrongAnswerPayload,
     UnresolvedCategoryPayload,
+    WrongAnswerClassifyPayload,
+    WrongAnswerConvertPayload,
+    WrongAnswerReportPayload,
+    WrongAnswerResolvePayload,
 )
 from app.schemas.common import (
     APIResponseSchema,
@@ -51,4 +55,8 @@ __all__ = [
     "TrainBotReindexPayload",
     "TrainBotResolveWrongAnswerPayload",
     "UnresolvedCategoryPayload",
+    "WrongAnswerClassifyPayload",
+    "WrongAnswerConvertPayload",
+    "WrongAnswerReportPayload",
+    "WrongAnswerResolvePayload",
 ]

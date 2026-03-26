@@ -88,7 +88,10 @@ const trainBotJobsTable = document.getElementById("trainBotJobsTable");
 const trainBotAuditTable = document.getElementById("trainBotAuditTable");
 const trainBotActionPromoteExpertBtn = document.getElementById("trainBotActionPromoteExpertBtn");
 const trainBotActionPromoteQnaBtn = document.getElementById("trainBotActionPromoteQnaBtn");
+const trainBotActionClassifyWrongBtn = document.getElementById("trainBotActionClassifyWrongBtn");
 const trainBotActionResolveWrongBtn = document.getElementById("trainBotActionResolveWrongBtn");
+const trainBotActionCategoryFixBtn = document.getElementById("trainBotActionCategoryFixBtn");
+const trainBotActionSourceIssueBtn = document.getElementById("trainBotActionSourceIssueBtn");
 const trainBotActionReindexBtn = document.getElementById("trainBotActionReindexBtn");
 const trainBotActionCategoryRefreshBtn = document.getElementById("trainBotActionCategoryRefreshBtn");
 const trainBotActionThresholdRefreshBtn = document.getElementById("trainBotActionThresholdRefreshBtn");
@@ -1478,8 +1481,8 @@ async function saveExpertAnswer() {
 
 async function trainBotPromoteExpert() {
   const item = selectedTrainBotItem();
-  if (!item || item.queue_type !== "unresolved") {
-    alert("Select an unresolved queue item.");
+  if (!item || !["unresolved", "wrong_answer"].includes(item.queue_type)) {
+    alert("Select an unresolved or wrong-answer queue item.");
     return;
   }
   const category = (prompt("Category code for expert answer:", item.category || "patent") || "").trim();
@@ -1488,11 +1491,20 @@ async function trainBotPromoteExpert() {
     alert("Category and expert answer are required.");
     return;
   }
-  await runTrainBotAction("/api/admin/train-bot/actions/promote-expert", {
-    unresolved_query_id: Number(item.id),
+  if (item.queue_type === "unresolved") {
+    await runTrainBotAction("/api/admin/train-bot/actions/promote-expert", {
+      unresolved_query_id: Number(item.id),
+      category,
+      expert_answer: expertAnswer,
+      source_note: "train_bot_promote_expert",
+    });
+    return;
+  }
+
+  await runTrainBotAction(`/api/admin/wrong-answer-reports/${Number(item.id)}/convert/expert`, {
     category,
-    expert_answer: expertAnswer,
-    source_note: "train_bot_promote_expert",
+    answer_text: expertAnswer,
+    source_note: "train_bot_wrong_report_to_expert",
   });
 }
 
@@ -1532,6 +1544,52 @@ async function trainBotResolveWrongReport() {
     report_id: Number(item.id),
     admin_action: adminAction,
     action_notes: actionNotes || null,
+  });
+}
+
+async function trainBotClassifyWrongReport() {
+  const item = selectedTrainBotItem();
+  if (!item || item.queue_type !== "wrong_answer") {
+    alert("Select a wrong-answer queue item.");
+    return;
+  }
+  const status = (prompt("Set status (open/in_review/resolved):", "in_review") || "").trim() || "in_review";
+  const severity = (prompt("Severity (low/medium/high):", "medium") || "").trim() || "medium";
+  const reasonCode = (prompt("Reason code:", "incorrect_answer") || "").trim() || "incorrect_answer";
+  const notes = (prompt("Classification notes:", "") || "").trim();
+  await runTrainBotAction(`/api/admin/wrong-answer-reports/${Number(item.id)}/classify`, {
+    status,
+    severity,
+    reason_code: reasonCode,
+    action_notes: notes || null,
+  });
+}
+
+async function trainBotCategoryFix() {
+  const item = selectedTrainBotItem();
+  if (!item || item.queue_type !== "wrong_answer") {
+    alert("Select a wrong-answer queue item.");
+    return;
+  }
+  const category = (prompt("Fixed category code (optional):", item.category || "") || "").trim();
+  const notes = (prompt("Category-fix notes:", "") || "").trim();
+  await runTrainBotAction(`/api/admin/wrong-answer-reports/${Number(item.id)}/convert/category-fix`, {
+    category: category || null,
+    source_note: notes || null,
+  });
+}
+
+async function trainBotSourceIssue() {
+  const item = selectedTrainBotItem();
+  if (!item || item.queue_type !== "wrong_answer") {
+    alert("Select a wrong-answer queue item.");
+    return;
+  }
+  const sourceId = Number(prompt("Data source ID for source issue (optional):", String(state.activeSourceId || 0)) || 0) || null;
+  const notes = (prompt("Source-issue notes:", "") || "").trim();
+  const query = sourceId ? `?data_source_id=${sourceId}` : "";
+  await runTrainBotAction(`/api/admin/wrong-answer-reports/${Number(item.id)}/convert/source-issue${query}`, {
+    source_note: notes || null,
   });
 }
 
@@ -1695,7 +1753,10 @@ if (treeClearBtn) treeClearBtn.addEventListener("click", clearDecisionTreeForm);
 if (trainBotRefreshBtn) trainBotRefreshBtn.addEventListener("click", loadTrainBotHub);
 if (trainBotActionPromoteExpertBtn) trainBotActionPromoteExpertBtn.addEventListener("click", trainBotPromoteExpert);
 if (trainBotActionPromoteQnaBtn) trainBotActionPromoteQnaBtn.addEventListener("click", trainBotPromoteQna);
+if (trainBotActionClassifyWrongBtn) trainBotActionClassifyWrongBtn.addEventListener("click", trainBotClassifyWrongReport);
 if (trainBotActionResolveWrongBtn) trainBotActionResolveWrongBtn.addEventListener("click", trainBotResolveWrongReport);
+if (trainBotActionCategoryFixBtn) trainBotActionCategoryFixBtn.addEventListener("click", trainBotCategoryFix);
+if (trainBotActionSourceIssueBtn) trainBotActionSourceIssueBtn.addEventListener("click", trainBotSourceIssue);
 if (trainBotActionReindexBtn) trainBotActionReindexBtn.addEventListener("click", trainBotTriggerReindex);
 if (trainBotActionCategoryRefreshBtn) trainBotActionCategoryRefreshBtn.addEventListener("click", trainBotCategoryRefresh);
 if (trainBotActionThresholdRefreshBtn) trainBotActionThresholdRefreshBtn.addEventListener("click", trainBotThresholdRefresh);

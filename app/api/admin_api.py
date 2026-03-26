@@ -23,6 +23,9 @@ from app.schemas import (
     TrainBotPromoteQnaPayload,
     TrainBotReindexPayload,
     TrainBotResolveWrongAnswerPayload,
+    WrongAnswerClassifyPayload,
+    WrongAnswerConvertPayload,
+    WrongAnswerResolvePayload,
     DecisionTreePayload,
 )
 from app.services import AnalyticsService, CategoriesService, ExpertAnswersService
@@ -84,6 +87,89 @@ def get_unresolved(
 def get_feedback(category: str | None = Query(default=None)):
     norm = categories_service.normalize(category) if category else None
     return {"items": admin_repository.list_feedback(norm)}
+
+
+@router.get("/api/admin/wrong-answer-reports")
+def list_wrong_answer_reports(
+    status: str = Query(default="open"),
+    limit: int = Query(default=200, ge=1, le=1000),
+):
+    return {"items": admin_repository.list_wrong_answer_reports(status=status, limit=limit)}
+
+
+@router.post("/api/admin/wrong-answer-reports/{report_id}/classify")
+def classify_wrong_answer_report(report_id: int, payload: WrongAnswerClassifyPayload):
+    result = admin_repository.classify_wrong_answer_report(
+        report_id=report_id,
+        status=payload.status,
+        assigned_to=payload.assigned_to,
+        reason_code=payload.reason_code,
+        severity=payload.severity,
+        action_notes=payload.action_notes,
+    )
+    return {"ok": True, **result}
+
+
+@router.post("/api/admin/wrong-answer-reports/{report_id}/resolve")
+def resolve_wrong_answer_report(report_id: int, payload: WrongAnswerResolvePayload):
+    result = admin_repository.resolve_wrong_answer_report(
+        report_id=report_id,
+        admin_action=payload.resolution_type,
+        action_notes=payload.action_notes,
+        resolution_type=payload.resolution_type,
+    )
+    return {"ok": True, **result}
+
+
+@router.post("/api/admin/wrong-answer-reports/{report_id}/convert/expert")
+def convert_wrong_report_to_expert(report_id: int, payload: WrongAnswerConvertPayload):
+    category = categories_service.normalize(payload.category or "")
+    if not category or not (payload.answer_text or "").strip():
+        raise HTTPException(status_code=400, detail="category and answer_text are required")
+    result = admin_repository.convert_wrong_answer_to_expert(
+        report_id=report_id,
+        category=category,
+        expert_answer=str(payload.answer_text or "").strip(),
+        source_note=payload.source_note,
+    )
+    return {"ok": True, **result}
+
+
+@router.post("/api/admin/wrong-answer-reports/{report_id}/convert/qna")
+def convert_wrong_report_to_qna(report_id: int, payload: WrongAnswerConvertPayload):
+    if not (payload.answer_text or "").strip():
+        raise HTTPException(status_code=400, detail="answer_text is required")
+    result = admin_repository.convert_wrong_answer_to_qna(
+        report_id=report_id,
+        answer=str(payload.answer_text or "").strip(),
+        category_code=categories_service.normalize(payload.category) if payload.category else None,
+        source_note=payload.source_note,
+    )
+    return {"ok": True, **result}
+
+
+@router.post("/api/admin/wrong-answer-reports/{report_id}/convert/category-fix")
+def convert_wrong_report_to_category_fix(report_id: int, payload: WrongAnswerConvertPayload):
+    result = admin_repository.convert_wrong_answer_to_category_fix(
+        report_id=report_id,
+        category_code=categories_service.normalize(payload.category) if payload.category else None,
+        action_notes=payload.source_note,
+    )
+    return {"ok": True, **result}
+
+
+@router.post("/api/admin/wrong-answer-reports/{report_id}/convert/source-issue")
+def convert_wrong_report_to_source_issue(
+    report_id: int,
+    payload: WrongAnswerConvertPayload,
+    data_source_id: int | None = Query(default=None),
+):
+    result = admin_repository.convert_wrong_answer_to_source_issue(
+        report_id=report_id,
+        data_source_id=data_source_id,
+        action_notes=payload.source_note,
+    )
+    return {"ok": True, **result}
 
 
 @router.get("/api/admin/chat-history/sessions")

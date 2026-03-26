@@ -14,6 +14,8 @@ class AdminRecordSchema(BaseModel):
 
 
 class FeedbackPayload(BaseModel):
+    session_id: int | None = None
+    message_id: int | None = None
     question: str
     normalized_question: str | None = None
     category: str | None = None
@@ -125,3 +127,36 @@ class TrainBotResolveWrongAnswerPayload(BaseModel):
 
 class ChatSessionNotePayload(BaseModel):
     admin_note: str
+
+
+class WrongAnswerReportPayload(BaseModel):
+    session_id: int | None = None
+    message_id: int | None = None
+    feedback_id: int | None = None
+    question: str
+    normalized_question: str | None = None
+    category: str | None = None
+    answer_text: str
+    citations: list[CitationSchema] | None = None
+    note: str | None = None
+    reason_code: str = "incorrect_answer"
+    severity: str = "medium"
+
+
+class WrongAnswerClassifyPayload(BaseModel):
+    status: str = "open"
+    assigned_to: str | None = None
+    reason_code: str | None = None
+    severity: str | None = None
+    action_notes: str | None = None
+
+
+class WrongAnswerResolvePayload(BaseModel):
+    resolution_type: str
+    action_notes: str | None = None
+
+
+class WrongAnswerConvertPayload(BaseModel):
+    category: str | None = None
+    answer_text: str | None = None
+    source_note: str | None = None

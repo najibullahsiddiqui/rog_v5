@@ -1445,6 +1445,8 @@ class AdminStore:
         satisfied: bool,
         comment: str | None = None,
         citations: list[dict] | None = None,
+        session_id: int | None = None,
+        message_id: int | None = None,
     ) -> int:
         normalized_question = normalize_question_text(normalized_question or question)
 
@@ -1469,10 +1471,12 @@ class AdminStore:
             conn.execute(
                 """
                 INSERT INTO user_feedback
-                (question, normalized_question, category, answer_text, satisfied, comment, citations_json, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'open')
+                (session_id, message_id, question, normalized_question, category, answer_text, satisfied, comment, citations_json, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open')
                 """,
                 (
+                    session_id,
+                    message_id,
                     question,
                     normalized_question,
                     category,
@@ -1483,6 +1487,144 @@ class AdminStore:
                 ),
             )
             return int(cur.lastrowid)
+
+    def create_wrong_answer_report(
+        self,
+        *,
+        session_id: int | None,
+        message_id: int | None,
+        feedback_id: int | None,
+        question: str,
+        normalized_question: str | None,
+        category: str | None,
+        answer_text: str,
+        citations: list[dict[str, Any]] | None = None,
+        note: str | None = None,
+        reason_code: str = "incorrect_answer",
+        severity: str = "medium",
+    ) -> int:
+        if severity not in {"low", "medium", "high"}:
+            severity = "medium"
+        nq = normalize_question_text(normalized_question or question)
+        with self._conn() as conn:
+            effective_feedback_id = feedback_id
+            if not effective_feedback_id:
+                citations_json = json.dumps(citations or [], ensure_ascii=False)
+                cur_feedback = conn.execute(
+                    """
+                    INSERT INTO user_feedback
+                    (session_id, message_id, question, normalized_question, category, answer_text, satisfied, comment, citations_json, status)
+                    VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, 'open')
+                    """,
+                    (
+                        session_id,
+                        message_id,
+                        question,
+                        nq,
+                        category,
+                        answer_text,
+                        note,
+                        citations_json,
+                    ),
+                )
+                effective_feedback_id = int(cur_feedback.lastrowid)
+
+            cur = conn.execute(
+                """
+                INSERT INTO wrong_answer_reports
+                (session_id, message_id, feedback_id, reason_code, report_text, severity, status)
+                VALUES (?, ?, ?, ?, ?, ?, 'open')
+                """,
+                (session_id, message_id, effective_feedback_id, reason_code, note, severity),
+            )
+            report_id = int(cur.lastrowid)
+            self._insert_audit_log(
+                conn,
+                action="create_wrong_answer_report",
+                entity_type="wrong_answer_reports",
+                entity_id=report_id,
+                metadata={"reason_code": reason_code, "severity": severity},
+            )
+            return report_id
+
+    def list_wrong_answer_reports(self, status: str = "open", limit: int = 200) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    wr.id,
+                    wr.session_id,
+                    wr.message_id,
+                    wr.feedback_id,
+                    wr.reason_code,
+                    wr.report_text,
+                    wr.severity,
+                    wr.status,
+                    wr.assigned_to,
+                    wr.admin_action,
+                    wr.action_notes,
+                    wr.resolved_at,
+                    wr.created_at,
+                    COALESCE(uf.question, cm.question_text, '') AS question,
+                    COALESCE(uf.normalized_question, cm.normalized_question, '') AS normalized_question,
+                    uf.category,
+                    COALESCE(uf.answer_text, cm.answer_text, '') AS answer_text,
+                    COALESCE(uf.citations_json, '[]') AS citations_json
+                FROM wrong_answer_reports wr
+                LEFT JOIN user_feedback uf ON uf.id = wr.feedback_id
+                LEFT JOIN chat_messages cm ON cm.id = wr.message_id
+                WHERE (? = '' OR wr.status = ?)
+                ORDER BY wr.id DESC
+                LIMIT ?
+                """,
+                (status or "", status or "", max(1, min(limit, 1000))),
+            ).fetchall()
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["citations"] = json.loads(item.get("citations_json") or "[]")
+            items.append(item)
+        return items
+
+    def classify_wrong_answer_report(
+        self,
+        *,
+        report_id: int,
+        status: str,
+        assigned_to: str | None = None,
+        reason_code: str | None = None,
+        severity: str | None = None,
+        action_notes: str | None = None,
+    ) -> dict[str, Any]:
+        with self._conn() as conn:
+            cur = conn.execute(
+                """
+                UPDATE wrong_answer_reports
+                SET status=?,
+                    assigned_to=COALESCE(?, assigned_to),
+                    reason_code=COALESCE(?, reason_code),
+                    severity=COALESCE(?, severity),
+                    action_notes=COALESCE(?, action_notes),
+                    updated_at=CURRENT_TIMESTAMP
+                WHERE id=?
+                """,
+                (status, assigned_to, reason_code, severity, action_notes, report_id),
+            )
+            if cur.rowcount <= 0:
+                raise ValueError("Wrong-answer report not found")
+            audit_id = self._insert_audit_log(
+                conn,
+                action="classify_wrong_answer_report",
+                entity_type="wrong_answer_reports",
+                entity_id=report_id,
+                metadata={
+                    "status": status,
+                    "assigned_to": assigned_to,
+                    "reason_code": reason_code,
+                    "severity": severity,
+                },
+            )
+        return {"report_id": report_id, "audit_log_id": audit_id}
 
     def save_expert_answer(
         self,
@@ -1840,7 +1982,7 @@ class AdminStore:
         items = [dict(r) for r in unresolved_rows] + [dict(r) for r in wrong_rows]
         items.sort(key=lambda x: str(x.get("created_at") or ""), reverse=True)
         for item in items:
-            suggestions = ["promote_to_expert", "trigger_category_refresh"]
+            suggestions = ["classify_report", "promote_to_expert", "trigger_category_refresh"]
             if int(item.get("repeat_count") or 1) >= 2:
                 suggestions.insert(1, "promote_to_qna")
             if item.get("queue_type") == "wrong_answer":
@@ -2013,6 +2155,7 @@ class AdminStore:
         report_id: int,
         admin_action: str,
         action_notes: str | None = None,
+        resolution_type: str | None = None,
     ) -> dict[str, Any]:
         with self._conn() as conn:
             cur = conn.execute(
@@ -2021,11 +2164,12 @@ class AdminStore:
                 SET status='resolved',
                     admin_action=?,
                     action_notes=?,
+                    reason_code=COALESCE(?, reason_code),
                     resolved_at=CURRENT_TIMESTAMP,
                     updated_at=CURRENT_TIMESTAMP
                 WHERE id=? AND status='open'
                 """,
-                (admin_action, action_notes, report_id),
+                (admin_action, action_notes, resolution_type, report_id),
             )
             if cur.rowcount <= 0:
                 raise ValueError("Wrong-answer report not found or already resolved")
@@ -2037,6 +2181,108 @@ class AdminStore:
                 metadata={"admin_action": admin_action, "action_notes": action_notes},
             )
         return {"report_id": report_id, "audit_log_id": audit_id}
+
+    def convert_wrong_answer_to_expert(
+        self,
+        *,
+        report_id: int,
+        category: str,
+        expert_answer: str,
+        source_note: str | None = None,
+    ) -> dict[str, Any]:
+        rows = self.list_wrong_answer_reports(status="", limit=1000)
+        report = next((r for r in rows if int(r["id"]) == int(report_id)), None)
+        if not report:
+            raise ValueError("Wrong-answer report not found")
+
+        job_id = self.create_training_job(
+            job_type="category_refresh",
+            params={"workflow": "wrong_report_to_expert", "report_id": report_id},
+        )
+        try:
+            expert_answer_id = self.save_expert_answer(
+                question=str(report.get("question") or ""),
+                normalized_question=str(report.get("normalized_question") or ""),
+                category=category,
+                expert_answer=expert_answer,
+                source_note=source_note,
+                unresolved_query_id=None,
+            )
+            resolved = self.resolve_wrong_answer_report(
+                report_id=report_id,
+                admin_action="convert_to_expert_answer",
+                action_notes=source_note,
+                resolution_type="expert_answer",
+            )
+            self.complete_training_job(job_id, {"expert_answer_id": expert_answer_id, **resolved})
+            return {"training_job_id": job_id, "expert_answer_id": expert_answer_id, **resolved}
+        except Exception as exc:
+            self.fail_training_job(job_id, str(exc))
+            raise
+
+    def convert_wrong_answer_to_qna(
+        self,
+        *,
+        report_id: int,
+        answer: str,
+        category_code: str | None = None,
+        source_note: str | None = None,
+    ) -> dict[str, Any]:
+        rows = self.list_wrong_answer_reports(status="", limit=1000)
+        report = next((r for r in rows if int(r["id"]) == int(report_id)), None)
+        if not report:
+            raise ValueError("Wrong-answer report not found")
+        result = self.promote_to_qna_pair(
+            source_item_type="wrong_answer_reports",
+            source_item_id=report_id,
+            question=str(report.get("question") or ""),
+            answer=answer,
+            category_code=category_code,
+            source_note=source_note,
+        )
+        resolved = self.resolve_wrong_answer_report(
+            report_id=report_id,
+            admin_action="convert_to_qna_pair",
+            action_notes=source_note,
+            resolution_type="qna_pair",
+        )
+        return {**result, **resolved}
+
+    def convert_wrong_answer_to_category_fix(
+        self,
+        *,
+        report_id: int,
+        category_code: str | None = None,
+        action_notes: str | None = None,
+    ) -> dict[str, Any]:
+        refresh = self.trigger_category_refresh_training(category_code)
+        resolved = self.resolve_wrong_answer_report(
+            report_id=report_id,
+            admin_action="category_fix",
+            action_notes=action_notes,
+            resolution_type="category_fix",
+        )
+        return {**refresh, **resolved}
+
+    def convert_wrong_answer_to_source_issue(
+        self,
+        *,
+        report_id: int,
+        data_source_id: int | None = None,
+        action_notes: str | None = None,
+    ) -> dict[str, Any]:
+        result: dict[str, Any]
+        if data_source_id:
+            result = self.trigger_source_reindex_training(data_source_id)
+        else:
+            result = {"ok": True, "message": "Source issue logged; no reindex requested"}
+        resolved = self.resolve_wrong_answer_report(
+            report_id=report_id,
+            admin_action="source_issue",
+            action_notes=action_notes,
+            resolution_type="source_issue",
+        )
+        return {**result, **resolved}
 
     def list_chat_sessions(
         self,
