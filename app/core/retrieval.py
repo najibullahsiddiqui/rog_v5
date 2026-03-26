@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import pickle
 import re
+import sqlite3
 from difflib import SequenceMatcher
 from typing import Any, List
 
@@ -153,6 +154,37 @@ class Retriever:
             q = extract_question_from_chunk(chunk.get("text", ""))
             self.chunk_questions.append((idx, q))
 
+    def _load_enabled_source_documents(self) -> tuple[set[str], bool]:
+        db_path = "data/admin_review.db"
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            table_row = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='data_sources'"
+            ).fetchone()
+            if not table_row:
+                return set(), False
+
+            source_count = conn.execute("SELECT COUNT(*) AS total FROM data_sources").fetchone()
+            has_sources = bool(source_count and int(source_count["total"] or 0) > 0)
+
+            rows = conn.execute(
+                """
+                SELECT DISTINCT sd.file_name
+                FROM source_documents sd
+                JOIN data_sources ds ON ds.id = sd.data_source_id
+                WHERE ds.status='enabled' AND COALESCE(sd.status, 'active')='active'
+                """
+            ).fetchall()
+            return ({str(r["file_name"]) for r in rows if r["file_name"]}, has_sources)
+        except Exception:
+            return set(), False
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
     def _direct_match_hits(self, query: str) -> List[dict]:
         best_idx = None
         best_score = 0.0
@@ -215,12 +247,72 @@ class Retriever:
         if not category_hint:
             return candidates, 0
 
+        scoped_docs = self._load_category_scoped_docs(category_hint)
+        if scoped_docs:
+            filtered = []
+            dropped = 0
+            for c in candidates:
+                doc_name = c.get("doc_name")
+                if doc_name in scoped_docs:
+                    filtered.append(c)
+                else:
+                    dropped += 1
+            return filtered, dropped
+
         filtered = []
         dropped = 0
         for c in candidates:
             doc_name = c.get("doc_name")
             doc_category = DOC_CATEGORY_MAP.get(doc_name)
             if doc_category is None or doc_category == category_hint:
+                filtered.append(c)
+            else:
+                dropped += 1
+
+        return filtered, dropped
+
+    def _load_category_scoped_docs(self, category_code: str) -> set[str]:
+        db_path = "data/admin_review.db"
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """
+                SELECT retrieval_scope_json
+                FROM categories
+                WHERE code=? AND is_active=1
+                LIMIT 1
+                """,
+                (category_code,),
+            ).fetchone()
+            if not row:
+                return set()
+            raw = row["retrieval_scope_json"] or ""
+            if not raw:
+                return set()
+            payload = json.loads(raw)
+            docs = payload.get("doc_names") if isinstance(payload, dict) else None
+            if isinstance(docs, list):
+                return {str(d).strip() for d in docs if str(d).strip()}
+            return set()
+        except Exception:
+            return set()
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    def _apply_source_filter(self, candidates: list[dict]) -> tuple[list[dict], int]:
+        enabled_docs, has_sources = self._load_enabled_source_documents()
+        if not has_sources:
+            return candidates, 0
+
+        filtered = []
+        dropped = 0
+        for c in candidates:
+            doc_name = c.get("doc_name")
+            if doc_name in enabled_docs:
                 filtered.append(c)
             else:
                 dropped += 1
@@ -277,8 +369,11 @@ class Retriever:
 
         direct_hits = self._direct_match_hits(query)
         if direct_hits:
+            direct_hits, source_dropped = self._apply_source_filter(direct_hits)
             trace["candidate_counts"] = {
                 "direct_hits": len(direct_hits),
+                "after_source_filter": len(direct_hits),
+                "dropped_by_source": source_dropped,
                 "after_category_filter": len(direct_hits),
                 "after_dedupe": len(direct_hits),
                 "final": len(direct_hits),
@@ -314,6 +409,11 @@ class Retriever:
         candidates = filtered if filtered else candidates
         trace["candidate_counts"]["after_category_filter"] = len(candidates)
         trace["candidate_counts"]["dropped_by_category"] = dropped
+
+        source_filtered, source_dropped = self._apply_source_filter(candidates)
+        candidates = source_filtered
+        trace["candidate_counts"]["after_source_filter"] = len(candidates)
+        trace["candidate_counts"]["dropped_by_source"] = source_dropped
 
         for c in candidates:
             c["hybrid_score"] = (
