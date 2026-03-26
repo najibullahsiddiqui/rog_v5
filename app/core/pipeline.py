@@ -7,8 +7,7 @@ from typing import List, Tuple
 from app.core.category_utils import category_from_question
 from app.core.config import MIN_CONTEXT_CHARS
 from app.core.constants import REFUSAL_TEXT
-from app.core.llm import generate_answer
-from app.core.retrieval import Retriever
+from app.core.text_utils import normalize_question_text
 
 
 DIRECT_MATCH_THRESHOLD = 0.80
@@ -24,13 +23,6 @@ def format_page_label(hit: dict) -> str:
     if start == end:
         return f"Page {start}"
     return f"Pages {start}-{end}"
-
-
-def normalize_question_text(text: str) -> str:
-    text = (text or "").strip().lower()
-    text = re.sub(r"\s+", " ", text)
-    text = re.sub(r"[^\w\s]", "", text)
-    return text.strip()
 
 
 def question_similarity(user_question: str, chunk_question: str) -> float:
@@ -181,11 +173,13 @@ def get_best_direct_match(question: str, hits: List[dict]) -> Tuple[dict | None,
 
 class QAPipeline:
     def __init__(self):
+        from app.core.retrieval import Retriever
+
         self.retriever = Retriever()
 
-    def ask(self, question: str) -> dict:
+    def ask(self, question: str, category_hint_override: str | None = None) -> dict:
         normalized_question = normalize_question_text(question)
-        category_hint = category_from_question(question)
+        category_hint = category_hint_override or category_from_question(question)
         hits, retrieval_trace = self.retriever.retrieve_with_trace(question, category_hint=category_hint)
 
         grounded_hits: List[dict] = [h for h in hits if len((h.get("text") or "").strip()) > 60]
@@ -285,6 +279,8 @@ class QAPipeline:
                 answer_source = "unresolved"
                 citations = []
             else:
+                from app.core.llm import generate_answer
+
                 answer = generate_answer(question, context).strip()
                 answer = clean_answer_prefix(answer)
                 flow = "pdf_synthesized"

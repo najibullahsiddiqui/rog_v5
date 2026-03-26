@@ -24,6 +24,9 @@ A small, strict, document-grounded chatbot for 2-4 approved PDFs.
    - `uvicorn app.main:app --reload`
 7. Open:
    - `http://127.0.0.1:8000`
+8. Admin access:
+   - Set `ADMIN_TOKEN` in env (example: `ADMIN_TOKEN=change-me-demo-token`)
+   - Open `http://127.0.0.1:8000/admin` and sign in with that token
 
 ## Folder structure
 - `app/` - FastAPI app and core logic
@@ -54,8 +57,28 @@ A small, strict, document-grounded chatbot for 2-4 approved PDFs.
 ### Run app
 `uvicorn app.main:app --host 0.0.0.0 --port 8000`
 
+### Admin token (required for /admin and /api/admin/*)
+Linux/macOS:
+`export ADMIN_TOKEN='change-me-demo-token'`
+
+Windows PowerShell:
+`$env:ADMIN_TOKEN='change-me-demo-token'`
+
+### Admin v2 runbook
+See: `docs/ADMIN_V2_RUNBOOK.md` for setup, env vars, migrations, boundaries, and audit expectations.
+
+### Run evaluation harness
+`python scripts/run_eval_harness.py --test-set app/evals/default_test_set.json`
+
+The evaluator writes JSON + Markdown reports to `data/eval_reports/` and prints summary metrics:
+- exact match success
+- grounded answer success
+- unresolved rate
+- wrong citation rate
+- response mode distribution
+- latency (avg/p95/max)
+
 ## Recommended demo flow
 - Ask direct section-based questions
 - Ask page-specific questions
 - Ask one out-of-scope question to show refusal behavior
-

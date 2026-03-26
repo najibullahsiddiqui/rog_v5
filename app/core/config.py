@@ -23,3 +23,6 @@ TOP_K_RERANK = settings.top_k_rerank
 
 MIN_CONTEXT_CHARS = settings.min_context_chars
 MIN_RERANK_SCORE = settings.min_rerank_score
+
+ADMIN_TOKEN = settings.admin_token
+ADMIN_SESSION_COOKIE = settings.admin_session_cookie

@@ -54,6 +54,8 @@ class Settings:
         self.top_k_rerank = int(os.getenv("TOP_K_RERANK", "8"))
         self.min_context_chars = int(os.getenv("MIN_CONTEXT_CHARS", "80"))
         self.min_rerank_score = float(os.getenv("MIN_RERANK_SCORE", "0.0"))
+        self.admin_token = os.getenv("ADMIN_TOKEN", "demo-admin-token")
+        self.admin_session_cookie = os.getenv("ADMIN_SESSION_COOKIE", "ip_admin_session")
 
 
 @lru_cache(maxsize=1)
