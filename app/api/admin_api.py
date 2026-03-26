@@ -3,12 +3,16 @@ from __future__ import annotations
 import io
 from pathlib import Path
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from openpyxl import Workbook
 
-from app.schemas import ExpertAnswerPayload
+from app.schemas import (
+    DataSourceCreatePayload,
+    DataSourceStatusPayload,
+    ExpertAnswerPayload,
+)
 from app.services import AnalyticsService, CategoriesService, ExpertAnswersService
 from app.repositories import AdminRepository
 from app.core.pipeline import normalize_question_text
@@ -68,6 +72,45 @@ def get_unresolved(
 def get_feedback(category: str | None = Query(default=None)):
     norm = categories_service.normalize(category) if category else None
     return {"items": admin_repository.list_feedback(norm)}
+
+
+@router.get("/api/admin/data-sources")
+def list_data_sources():
+    return {"items": admin_repository.list_data_sources()}
+
+
+@router.post("/api/admin/data-sources")
+def create_data_source(payload: DataSourceCreatePayload):
+    allowed_source_types = {"pdf_folder", "manual_upload", "api", "database", "s3", "gdrive"}
+    if payload.source_type not in allowed_source_types:
+        raise HTTPException(status_code=400, detail="Unsupported source_type")
+
+    source_id = admin_repository.create_data_source(
+        name=payload.name.strip(),
+        source_type=payload.source_type,
+        source_format=(payload.source_format or "unknown").strip().lower(),
+        uri=(payload.uri or "").strip() or None,
+    )
+    return {"ok": True, "source_id": source_id}
+
+
+@router.get("/api/admin/data-sources/{data_source_id}/documents")
+def list_source_documents(data_source_id: int):
+    return {"items": admin_repository.list_source_documents(data_source_id)}
+
+
+@router.post("/api/admin/data-sources/{data_source_id}/status")
+def set_data_source_status(data_source_id: int, payload: DataSourceStatusPayload):
+    if payload.status not in {"enabled", "disabled"}:
+        raise HTTPException(status_code=400, detail="Invalid status")
+    admin_repository.set_data_source_status(data_source_id, payload.status)
+    return {"ok": True}
+
+
+@router.post("/api/admin/data-sources/{data_source_id}/reingest")
+def trigger_reingest(data_source_id: int):
+    job_id = admin_repository.queue_reingest(data_source_id)
+    return {"ok": True, "ingestion_job_id": job_id, "status": "queued"}
 
 
 @router.post("/api/admin/expert-answer")

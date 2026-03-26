@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
 from pathlib import Path
 from typing import Any
 
 from app.core.pipeline import normalize_question_text
 from app.core.db_migrations import apply_v2_schema
+from app.core.config import PDF_DIR
 
 
 DB_PATH = Path("data/admin_review.db")
@@ -96,6 +98,192 @@ class AdminStore:
                 )
 
             apply_v2_schema(conn)
+            self._ensure_data_source_columns(conn)
+
+    def _ensure_data_source_columns(self, conn: sqlite3.Connection) -> None:
+        if not self._table_exists(conn, "data_sources"):
+            return
+
+        if not self._column_exists(conn, "data_sources", "source_format"):
+            conn.execute(
+                "ALTER TABLE data_sources ADD COLUMN source_format TEXT DEFAULT 'pdf'"
+            )
+
+        if not self._column_exists(conn, "data_sources", "last_ingestion_status"):
+            conn.execute(
+                "ALTER TABLE data_sources ADD COLUMN last_ingestion_status TEXT DEFAULT 'never'"
+            )
+
+        if not self._column_exists(conn, "data_sources", "last_ingestion_at"):
+            conn.execute(
+                "ALTER TABLE data_sources ADD COLUMN last_ingestion_at TEXT"
+            )
+
+    def _ensure_default_pdf_source(self, conn: sqlite3.Connection) -> int | None:
+        if not self._table_exists(conn, "data_sources"):
+            return None
+
+        row = conn.execute(
+            """
+            SELECT id
+            FROM data_sources
+            WHERE source_key='local_pdf_folder'
+            LIMIT 1
+            """
+        ).fetchone()
+        if row:
+            return int(row["id"])
+
+        cur = conn.execute(
+            """
+            INSERT INTO data_sources (
+                source_key, name, source_type, source_format, status, uri, last_ingestion_status
+            )
+            VALUES ('local_pdf_folder', 'Local PDF Folder', 'pdf_folder', 'pdf', 'enabled', ?, 'unknown')
+            """,
+            (str(PDF_DIR),),
+        )
+        return int(cur.lastrowid)
+
+    def _sync_pdf_documents(self, conn: sqlite3.Connection) -> None:
+        source_id = self._ensure_default_pdf_source(conn)
+        if not source_id or not self._table_exists(conn, "source_documents"):
+            return
+
+        for pdf_path in sorted(PDF_DIR.glob("*.pdf")):
+            row = conn.execute(
+                """
+                SELECT id FROM source_documents
+                WHERE data_source_id=? AND file_name=?
+                LIMIT 1
+                """,
+                (source_id, pdf_path.name),
+            ).fetchone()
+            if row:
+                continue
+
+            doc_key = f"pdf::{pdf_path.stem}"
+            conn.execute(
+                """
+                INSERT INTO source_documents (
+                    data_source_id, doc_key, file_name, version, content_hash, chunk_count, status, ingested_at
+                )
+                VALUES (?, ?, ?, NULL, NULL, 0, 'active', NULL)
+                """,
+                (source_id, doc_key, pdf_path.name),
+            )
+
+    def list_data_sources(self) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            self._ensure_data_source_columns(conn)
+            self._sync_pdf_documents(conn)
+
+            rows = conn.execute(
+                """
+                SELECT
+                    ds.id,
+                    ds.source_key,
+                    ds.name,
+                    ds.source_type,
+                    COALESCE(ds.source_format, 'unknown') AS source_format,
+                    ds.status,
+                    ds.uri,
+                    COALESCE(ds.last_ingestion_status, 'never') AS last_ingestion_status,
+                    ds.last_ingestion_at,
+                    ds.created_at,
+                    ds.updated_at,
+                    COUNT(sd.id) AS document_count,
+                    COALESCE(SUM(sd.chunk_count), 0) AS chunk_count
+                FROM data_sources ds
+                LEFT JOIN source_documents sd
+                    ON sd.data_source_id = ds.id
+                    AND COALESCE(sd.status, 'active') != 'deleted'
+                GROUP BY ds.id
+                ORDER BY ds.id DESC
+                """
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def create_data_source(
+        self,
+        *,
+        name: str,
+        source_type: str,
+        source_format: str,
+        uri: str | None = None,
+    ) -> int:
+        source_key = normalize_question_text(name).replace(" ", "_")[:48] or "source"
+        source_key = f"{source_key}_{source_format}_{int(time.time() * 1000)}"
+
+        with self._conn() as conn:
+            self._ensure_data_source_columns(conn)
+            cur = conn.execute(
+                """
+                INSERT INTO data_sources (
+                    source_key, name, source_type, source_format, status, uri, last_ingestion_status
+                )
+                VALUES (?, ?, ?, ?, 'enabled', ?, 'never')
+                """,
+                (source_key, name, source_type, source_format, uri),
+            )
+            return int(cur.lastrowid)
+
+    def set_data_source_status(self, data_source_id: int, status: str) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                """
+                UPDATE data_sources
+                SET status=?, updated_at=CURRENT_TIMESTAMP
+                WHERE id=?
+                """,
+                (status, data_source_id),
+            )
+
+    def list_source_documents(self, data_source_id: int) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    id,
+                    data_source_id,
+                    doc_key,
+                    file_name,
+                    version,
+                    content_hash,
+                    chunk_count,
+                    status,
+                    ingested_at,
+                    created_at,
+                    updated_at
+                FROM source_documents
+                WHERE data_source_id=?
+                ORDER BY file_name ASC
+                """,
+                (data_source_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def queue_reingest(self, data_source_id: int, trigger_type: str = "manual") -> int:
+        with self._conn() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO ingestion_jobs (data_source_id, status, trigger_type, started_at)
+                VALUES (?, 'queued', ?, CURRENT_TIMESTAMP)
+                """,
+                (data_source_id, trigger_type),
+            )
+
+            conn.execute(
+                """
+                UPDATE data_sources
+                SET last_ingestion_status='queued',
+                    last_ingestion_at=CURRENT_TIMESTAMP,
+                    updated_at=CURRENT_TIMESTAMP
+                WHERE id=?
+                """,
+                (data_source_id,),
+            )
+            return int(cur.lastrowid)
 
     def log_unresolved_query(
         self,
