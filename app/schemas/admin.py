@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.schemas.common import CitationSchema
 
@@ -77,3 +77,17 @@ class CategoryPayload(BaseModel):
 
 class CategorySynonymPayload(BaseModel):
     synonym: str
+
+
+class DecisionTreePayload(BaseModel):
+    id: int | None = None
+    tree_key: str | None = None
+    name: str
+    version: str = "1.0.0"
+    status: str = "draft"
+    description: str | None = None
+    category_code: str | None = None
+    is_active: bool = True
+    trigger_phrases: list[str] = Field(default_factory=list)
+    nodes: list[dict] = Field(default_factory=list)
+    edges: list[dict] = Field(default_factory=list)

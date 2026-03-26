@@ -7,6 +7,7 @@ from app.schemas.admin import (
     ExpertAnswerPayload,
     FeedbackPayload,
     JsonConvertPayload,
+    DecisionTreePayload,
     QnaPairPayload,
     UnresolvedCategoryPayload,
 )
@@ -25,6 +26,7 @@ __all__ = [
     "AdminRecordSchema",
     "CategoryPayload",
     "CategorySynonymPayload",
+    "DecisionTreePayload",
     "AskRequest",
     "AskResponse",
     "CitationSchema",

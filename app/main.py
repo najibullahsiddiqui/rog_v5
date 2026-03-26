@@ -123,6 +123,7 @@ def open_pdf(file_name: str):
 @app.post("/api/ask")
 def ask(payload: AskRequest):
     question = payload.question.strip()
+    session_key = (payload.session_key or "").strip() or "default_session"
     if not question:
         return JSONResponse(
             status_code=400,
@@ -132,6 +133,59 @@ def ask(payload: AskRequest):
     normalized_question = normalize_question_text(question)
 
     try:
+        tree_result = store.run_decision_tree(session_key, question)
+        if tree_result:
+            if tree_result.get("type") == "prompt":
+                return {
+                    "answer": tree_result.get("prompt") or "Please choose an option.",
+                    "grounded": True,
+                    "citations": [],
+                    "category": None,
+                    "predicted_category": None,
+                    "unresolved_query_id": None,
+                    "answer_source": "decision_tree_prompt",
+                    "debug": {"decision_tree": tree_result},
+                }
+
+            if tree_result.get("type") == "terminal":
+                outcome_type = tree_result.get("outcome_type")
+                if outcome_type == "final_answer":
+                    return {
+                        "answer": tree_result.get("answer_text") or "Done.",
+                        "grounded": True,
+                        "citations": [],
+                        "category": None,
+                        "predicted_category": None,
+                        "unresolved_query_id": None,
+                        "answer_source": "decision_tree_final",
+                        "debug": {"decision_tree": tree_result},
+                    }
+                if outcome_type == "route_category":
+                    routed_category = categories_service.normalize(str(tree_result.get("outcome_value") or ""))
+                    result = get_pipeline().ask(question, category_hint_override=routed_category)
+                    result["answer_source"] = "decision_tree_route_category"
+                    result["debug"] = {**(result.get("debug") or {}), "decision_tree": tree_result}
+                    return result
+                if outcome_type == "route_qna":
+                    qna = store.find_qna_exact(str(tree_result.get("outcome_value") or question))
+                    if qna:
+                        return {
+                            "answer": qna["answer"],
+                            "grounded": True,
+                            "citations": [],
+                            "category": qna.get("category_code"),
+                            "predicted_category": qna.get("category_code"),
+                            "unresolved_query_id": None,
+                            "answer_source": "decision_tree_route_qna",
+                            "debug": {"decision_tree": tree_result, "qna_pair_id": qna["id"]},
+                        }
+                if outcome_type == "route_retrieval":
+                    routed_category = categories_service.normalize(str(tree_result.get("outcome_value") or ""))
+                    result = get_pipeline().ask(question, category_hint_override=routed_category)
+                    result["answer_source"] = "decision_tree_route_retrieval"
+                    result["debug"] = {**(result.get("debug") or {}), "decision_tree": tree_result}
+                    return result
+
         qna_exact = store.find_qna_exact(
             question=question,
             normalized_question=normalized_question,

@@ -17,6 +17,7 @@ from app.schemas import (
     ExpertAnswerPayload,
     JsonConvertPayload,
     QnaPairPayload,
+    DecisionTreePayload,
 )
 from app.services import AnalyticsService, CategoriesService, ExpertAnswersService
 from app.repositories import AdminRepository
@@ -144,6 +145,33 @@ def add_category_synonym(category_id: int, payload: CategorySynonymPayload):
 @router.get("/api/admin/categories/stats")
 def categories_stats():
     return admin_repository.category_statistics()
+
+
+@router.get("/api/admin/decision-trees")
+def list_decision_trees(include_inactive: bool = Query(default=True)):
+    return {"items": admin_repository.list_decision_trees(include_inactive=include_inactive)}
+
+
+@router.get("/api/admin/decision-trees/{tree_id}")
+def get_decision_tree(tree_id: int):
+    tree = admin_repository.get_decision_tree(tree_id)
+    if not tree:
+        raise HTTPException(status_code=404, detail="Decision tree not found")
+    return {"item": tree}
+
+
+@router.post("/api/admin/decision-trees")
+def save_decision_tree(payload: DecisionTreePayload):
+    tree_id = admin_repository.save_decision_tree(payload.model_dump())
+    return {"ok": True, "tree_id": tree_id}
+
+
+@router.delete("/api/admin/decision-trees/{tree_id}")
+def delete_decision_tree(tree_id: int):
+    ok = admin_repository.delete_decision_tree(tree_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Decision tree not found")
+    return {"ok": True}
 
 
 @router.get("/api/admin/data-sources")

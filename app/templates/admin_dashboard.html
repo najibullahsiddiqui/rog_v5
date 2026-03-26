@@ -101,6 +101,16 @@
             </span>
             <span class="menu-text">Categories</span>
           </button>
+
+          <button class="menu-item" type="button" data-section="decision-trees">
+            <span class="menu-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M4 6h6v6H4zM14 4h6v4h-6zM14 16h6v4h-6zM10 9h4m-2 0v7"></path>
+              </svg>
+            </span>
+            <span class="menu-text">Decision Trees</span>
+          </button>
         </nav>
       </div>
 
@@ -424,6 +434,48 @@
             <button id="categoryClearBtn" class="btn btn-secondary" type="button">Clear</button>
           </div>
           <div id="categorySynonymsTable" class="table-wrap mt-18"></div>
+        </div>
+      </section>
+
+      <section id="section-decision-trees" class="section-block view-section hidden-view">
+        <div class="panel">
+          <div class="panel-header"><h2>Decision Trees</h2></div>
+          <div class="panel-actions">
+            <button id="treesRefreshBtn" class="btn btn-secondary" type="button">Refresh Trees</button>
+          </div>
+          <div id="decisionTreesTable" class="table-wrap mt-18"></div>
+        </div>
+
+        <div class="panel mt-18">
+          <div class="panel-header"><h2>Create / Edit Tree</h2></div>
+          <input id="treeEditId" type="hidden" />
+          <div class="panel-actions">
+            <input id="treeNameInput" type="text" placeholder="Tree name" />
+            <input id="treeKeyInput" type="text" placeholder="tree_key (optional)" />
+            <input id="treeCategoryInput" type="text" placeholder="category code (optional)" />
+            <label><input id="treeActiveInput" type="checkbox" checked /> active</label>
+          </div>
+          <div class="panel-actions">
+            <input id="treeVersionInput" type="text" placeholder="version" value="1.0.0" />
+            <input id="treeStatusInput" type="text" placeholder="status" value="draft" />
+            <input id="treeTriggersInput" type="text" placeholder="trigger phrases (comma separated)" />
+          </div>
+          <div class="form-group">
+            <label for="treeDescriptionInput">Description</label>
+            <textarea id="treeDescriptionInput" rows="2"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="treeNodesJsonInput">Nodes JSON</label>
+            <textarea id="treeNodesJsonInput" rows="8" placeholder='[{"node_key":"start","prompt_text":"...","is_terminal":false}]'></textarea>
+          </div>
+          <div class="form-group">
+            <label for="treeEdgesJsonInput">Edges JSON</label>
+            <textarea id="treeEdgesJsonInput" rows="8" placeholder='[{"from_node_key":"start","to_node_key":"end","condition_value":"yes"}]'></textarea>
+          </div>
+          <div class="panel-actions">
+            <button id="treeSaveBtn" class="btn btn-primary" type="button">Save Tree</button>
+            <button id="treeClearBtn" class="btn btn-secondary" type="button">Clear</button>
+          </div>
         </div>
       </section>
     </main>

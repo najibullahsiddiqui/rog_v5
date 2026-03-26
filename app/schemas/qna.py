@@ -8,6 +8,7 @@ from app.schemas.common import CitationSchema, QueryClassificationResult
 
 class AskRequest(BaseModel):
     question: str
+    session_key: str | None = None
 
 
 class AskResponse(BaseModel):

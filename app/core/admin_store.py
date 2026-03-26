@@ -102,6 +102,22 @@ class AdminStore:
             self._ensure_data_source_columns(conn)
             self._ensure_qna_pair_columns(conn)
             self._ensure_category_columns(conn)
+            self._ensure_decision_tree_columns(conn)
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS tree_runtime_sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_key TEXT NOT NULL,
+                    tree_id INTEGER NOT NULL,
+                    current_node_key TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'active',
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(session_key),
+                    FOREIGN KEY (tree_id) REFERENCES decision_trees(id)
+                )
+                """
+            )
 
     def _ensure_data_source_columns(self, conn: sqlite3.Connection) -> None:
         if not self._table_exists(conn, "data_sources"):
@@ -158,6 +174,18 @@ class AdminStore:
         if not self._column_exists(conn, "categories", "retrieval_scope_json"):
             conn.execute(
                 "ALTER TABLE categories ADD COLUMN retrieval_scope_json TEXT"
+            )
+
+    def _ensure_decision_tree_columns(self, conn: sqlite3.Connection) -> None:
+        if not self._table_exists(conn, "decision_trees"):
+            return
+        if not self._column_exists(conn, "decision_trees", "is_active"):
+            conn.execute(
+                "ALTER TABLE decision_trees ADD COLUMN is_active INTEGER DEFAULT 1"
+            )
+        if not self._column_exists(conn, "decision_trees", "trigger_phrases_json"):
+            conn.execute(
+                "ALTER TABLE decision_trees ADD COLUMN trigger_phrases_json TEXT"
             )
 
     def _ensure_default_pdf_source(self, conn: sqlite3.Connection) -> int | None:
@@ -543,6 +571,315 @@ class AdminStore:
                 """
             ).fetchall()
             return {"items": [dict(r) for r in rows]}
+
+    def list_decision_trees(self, include_inactive: bool = True) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            self._ensure_decision_tree_columns(conn)
+            query = """
+                SELECT
+                    dt.id,
+                    dt.tree_key,
+                    dt.name,
+                    dt.version,
+                    dt.status,
+                    dt.description,
+                    dt.is_active,
+                    dt.trigger_phrases_json,
+                    c.code AS category_code,
+                    dt.created_at,
+                    dt.updated_at,
+                    COUNT(DISTINCT n.id) AS nodes_count,
+                    COUNT(DISTINCT e.id) AS edges_count
+                FROM decision_trees dt
+                LEFT JOIN categories c ON c.id = dt.category_id
+                LEFT JOIN decision_tree_nodes n ON n.tree_id = dt.id
+                LEFT JOIN decision_tree_edges e ON e.tree_id = dt.id
+            """
+            if not include_inactive:
+                query += " WHERE dt.is_active=1"
+            query += " GROUP BY dt.id ORDER BY dt.updated_at DESC"
+            rows = conn.execute(query).fetchall()
+            items = [dict(r) for r in rows]
+            for item in items:
+                item["trigger_phrases"] = json.loads(item.get("trigger_phrases_json") or "[]")
+            return items
+
+    def get_decision_tree(self, tree_id: int) -> dict[str, Any] | None:
+        with self._conn() as conn:
+            self._ensure_decision_tree_columns(conn)
+            tree = conn.execute(
+                """
+                SELECT dt.*, c.code AS category_code
+                FROM decision_trees dt
+                LEFT JOIN categories c ON c.id = dt.category_id
+                WHERE dt.id=?
+                """,
+                (tree_id,),
+            ).fetchone()
+            if not tree:
+                return None
+
+            nodes = conn.execute(
+                """
+                SELECT id, node_key, node_type, prompt_text, answer_text, metadata_json, is_terminal
+                FROM decision_tree_nodes
+                WHERE tree_id=?
+                ORDER BY id ASC
+                """,
+                (tree_id,),
+            ).fetchall()
+            edges = conn.execute(
+                """
+                SELECT e.id, fn.node_key AS from_node_key, tn.node_key AS to_node_key,
+                       e.condition_type, e.condition_value, e.priority
+                FROM decision_tree_edges e
+                JOIN decision_tree_nodes fn ON fn.id = e.from_node_id
+                JOIN decision_tree_nodes tn ON tn.id = e.to_node_id
+                WHERE e.tree_id=?
+                ORDER BY e.priority ASC, e.id ASC
+                """,
+                (tree_id,),
+            ).fetchall()
+            result = dict(tree)
+            result["trigger_phrases"] = json.loads(result.get("trigger_phrases_json") or "[]")
+            result["nodes"] = [dict(r) for r in nodes]
+            result["edges"] = [dict(r) for r in edges]
+            return result
+
+    def save_decision_tree(self, payload: dict[str, Any]) -> int:
+        tree_id = int(payload.get("id") or 0)
+        nodes = payload.get("nodes") or []
+        edges = payload.get("edges") or []
+        category_code = normalize_question_text(str(payload.get("category_code") or "")).replace(" ", "_")
+
+        with self._conn() as conn:
+            self._ensure_decision_tree_columns(conn)
+            category_id = None
+            if category_code:
+                category_id = self._get_or_create_category_id(conn, code=category_code)
+
+            if tree_id:
+                conn.execute(
+                    """
+                    UPDATE decision_trees
+                    SET tree_key=?, name=?, version=?, status=?, description=?,
+                        category_id=?, is_active=?, trigger_phrases_json=?, updated_at=CURRENT_TIMESTAMP
+                    WHERE id=?
+                    """,
+                    (
+                        normalize_question_text(str(payload.get("tree_key") or payload.get("name") or "")).replace(" ", "_"),
+                        str(payload.get("name") or "").strip(),
+                        str(payload.get("version") or "1.0.0"),
+                        str(payload.get("status") or "draft"),
+                        str(payload.get("description") or "") or None,
+                        category_id,
+                        1 if payload.get("is_active", True) else 0,
+                        json.dumps(payload.get("trigger_phrases") or [], ensure_ascii=False),
+                        tree_id,
+                    ),
+                )
+                conn.execute("DELETE FROM decision_tree_edges WHERE tree_id=?", (tree_id,))
+                conn.execute("DELETE FROM decision_tree_nodes WHERE tree_id=?", (tree_id,))
+            else:
+                cur = conn.execute(
+                    """
+                    INSERT INTO decision_trees (
+                        tree_key, category_id, name, version, status, description, created_by, is_active, trigger_phrases_json
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, 'admin_ui', ?, ?)
+                    """,
+                    (
+                        normalize_question_text(str(payload.get("tree_key") or payload.get("name") or "")).replace(" ", "_"),
+                        category_id,
+                        str(payload.get("name") or "").strip(),
+                        str(payload.get("version") or "1.0.0"),
+                        str(payload.get("status") or "draft"),
+                        str(payload.get("description") or "") or None,
+                        1 if payload.get("is_active", True) else 0,
+                        json.dumps(payload.get("trigger_phrases") or [], ensure_ascii=False),
+                    ),
+                )
+                tree_id = int(cur.lastrowid)
+
+            node_id_by_key: dict[str, int] = {}
+            for n in nodes:
+                node_key = str(n.get("node_key") or "").strip()
+                if not node_key:
+                    continue
+                ncur = conn.execute(
+                    """
+                    INSERT INTO decision_tree_nodes (
+                        tree_id, node_key, node_type, prompt_text, answer_text, metadata_json, is_terminal
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        tree_id,
+                        node_key,
+                        str(n.get("node_type") or "question"),
+                        str(n.get("prompt_text") or "") or None,
+                        str(n.get("answer_text") or "") or None,
+                        json.dumps(n.get("metadata") or {}, ensure_ascii=False),
+                        1 if n.get("is_terminal") else 0,
+                    ),
+                )
+                node_id_by_key[node_key] = int(ncur.lastrowid)
+
+            for e in edges:
+                from_id = node_id_by_key.get(str(e.get("from_node_key") or "").strip())
+                to_id = node_id_by_key.get(str(e.get("to_node_key") or "").strip())
+                if not from_id or not to_id:
+                    continue
+                conn.execute(
+                    """
+                    INSERT INTO decision_tree_edges (
+                        tree_id, from_node_id, to_node_id, condition_type, condition_value, priority
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        tree_id,
+                        from_id,
+                        to_id,
+                        str(e.get("condition_type") or "option"),
+                        str(e.get("condition_value") or "") or None,
+                        int(e.get("priority") or 0),
+                    ),
+                )
+            return tree_id
+
+    def delete_decision_tree(self, tree_id: int) -> bool:
+        with self._conn() as conn:
+            conn.execute("DELETE FROM decision_tree_edges WHERE tree_id=?", (tree_id,))
+            conn.execute("DELETE FROM decision_tree_nodes WHERE tree_id=?", (tree_id,))
+            cur = conn.execute("DELETE FROM decision_trees WHERE id=?", (tree_id,))
+            return cur.rowcount > 0
+
+    def run_decision_tree(self, session_key: str, question: str) -> dict[str, Any] | None:
+        skey = (session_key or "").strip() or "default_session"
+        q = (question or "").strip().lower()
+        if not q:
+            return None
+
+        with self._conn() as conn:
+            self._ensure_decision_tree_columns(conn)
+            session = conn.execute(
+                "SELECT * FROM tree_runtime_sessions WHERE session_key=? AND status='active' LIMIT 1",
+                (skey,),
+            ).fetchone()
+
+            tree_id = None
+            current_node_key = None
+            if session:
+                tree_id = int(session["tree_id"])
+                current_node_key = str(session["current_node_key"])
+            else:
+                trees = conn.execute(
+                    """
+                    SELECT id, trigger_phrases_json
+                    FROM decision_trees
+                    WHERE is_active=1
+                    ORDER BY updated_at DESC
+                    """
+                ).fetchall()
+                for t in trees:
+                    phrases = json.loads(t["trigger_phrases_json"] or "[]")
+                    if any(str(p).strip().lower() in q for p in phrases):
+                        tree_id = int(t["id"])
+                        break
+                if not tree_id:
+                    return None
+
+                first_node = conn.execute(
+                    "SELECT node_key FROM decision_tree_nodes WHERE tree_id=? ORDER BY id ASC LIMIT 1",
+                    (tree_id,),
+                ).fetchone()
+                if not first_node:
+                    return None
+                current_node_key = str(first_node["node_key"])
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO tree_runtime_sessions(session_key, tree_id, current_node_key, status, updated_at)
+                    VALUES (?, ?, ?, 'active', CURRENT_TIMESTAMP)
+                    """,
+                    (skey, tree_id, current_node_key),
+                )
+
+            node = conn.execute(
+                """
+                SELECT id, node_key, prompt_text, answer_text, metadata_json, is_terminal
+                FROM decision_tree_nodes
+                WHERE tree_id=? AND node_key=?
+                LIMIT 1
+                """,
+                (tree_id, current_node_key),
+            ).fetchone()
+            if not node:
+                return None
+
+            edges = conn.execute(
+                """
+                SELECT e.*, tn.node_key AS to_node_key
+                FROM decision_tree_edges e
+                JOIN decision_tree_nodes fn ON fn.id=e.from_node_id
+                JOIN decision_tree_nodes tn ON tn.id=e.to_node_id
+                WHERE e.tree_id=? AND fn.node_key=?
+                ORDER BY e.priority ASC, e.id ASC
+                """,
+                (tree_id, current_node_key),
+            ).fetchall()
+
+            selected_edge = None
+            for e in edges:
+                condition_value = str(e["condition_value"] or "").strip().lower()
+                if condition_value and condition_value in q:
+                    selected_edge = e
+                    break
+            if not selected_edge and edges:
+                selected_edge = edges[0]
+
+            if selected_edge:
+                next_key = str(selected_edge["to_node_key"])
+                conn.execute(
+                    "UPDATE tree_runtime_sessions SET current_node_key=?, updated_at=CURRENT_TIMESTAMP WHERE session_key=?",
+                    (next_key, skey),
+                )
+                next_node = conn.execute(
+                    "SELECT node_key, prompt_text, answer_text, metadata_json, is_terminal FROM decision_tree_nodes WHERE tree_id=? AND node_key=? LIMIT 1",
+                    (tree_id, next_key),
+                ).fetchone()
+            else:
+                next_node = node
+
+            if not next_node:
+                return None
+
+            metadata = json.loads(next_node["metadata_json"] or "{}")
+            is_terminal = int(next_node["is_terminal"] or 0) == 1
+            if not is_terminal:
+                options = [str(e["condition_value"] or "").strip() for e in edges if str(e["condition_value"] or "").strip()]
+                return {
+                    "type": "prompt",
+                    "tree_id": tree_id,
+                    "node_key": next_node["node_key"],
+                    "prompt": str(next_node["prompt_text"] or "Please choose an option."),
+                    "options": options,
+                }
+
+            conn.execute(
+                "UPDATE tree_runtime_sessions SET status='completed', updated_at=CURRENT_TIMESTAMP WHERE session_key=?",
+                (skey,),
+            )
+            outcome_type = str(metadata.get("outcome_type") or "final_answer")
+            outcome_value = metadata.get("outcome_value")
+            return {
+                "type": "terminal",
+                "tree_id": tree_id,
+                "node_key": next_node["node_key"],
+                "outcome_type": outcome_type,
+                "outcome_value": outcome_value,
+                "answer_text": str(next_node["answer_text"] or ""),
+            }
 
     def import_categories(self, records: list[dict[str, Any]]) -> tuple[int, list[str]]:
         errors: list[str] = []

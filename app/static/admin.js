@@ -67,6 +67,21 @@ const categoryAddSynonymBtn = document.getElementById("categoryAddSynonymBtn");
 const categorySaveBtn = document.getElementById("categorySaveBtn");
 const categoryClearBtn = document.getElementById("categoryClearBtn");
 const categorySynonymsTable = document.getElementById("categorySynonymsTable");
+const treesRefreshBtn = document.getElementById("treesRefreshBtn");
+const decisionTreesTable = document.getElementById("decisionTreesTable");
+const treeEditId = document.getElementById("treeEditId");
+const treeNameInput = document.getElementById("treeNameInput");
+const treeKeyInput = document.getElementById("treeKeyInput");
+const treeCategoryInput = document.getElementById("treeCategoryInput");
+const treeActiveInput = document.getElementById("treeActiveInput");
+const treeVersionInput = document.getElementById("treeVersionInput");
+const treeStatusInput = document.getElementById("treeStatusInput");
+const treeTriggersInput = document.getElementById("treeTriggersInput");
+const treeDescriptionInput = document.getElementById("treeDescriptionInput");
+const treeNodesJsonInput = document.getElementById("treeNodesJsonInput");
+const treeEdgesJsonInput = document.getElementById("treeEdgesJsonInput");
+const treeSaveBtn = document.getElementById("treeSaveBtn");
+const treeClearBtn = document.getElementById("treeClearBtn");
 
 const expertModal = document.getElementById("expertModal");
 const modalOverlay = document.getElementById("modalOverlay");
@@ -100,6 +115,7 @@ const state = {
   qnaPairs: [],
   categories: [],
   categorySynonyms: [],
+  decisionTrees: [],
 };
 
 function escapeHtml(text) {
@@ -768,6 +784,128 @@ async function addCategorySynonym() {
   await loadCategories();
 }
 
+function buildDecisionTreesTable(items) {
+  if (!items.length) return `<div class="empty-state">No decision trees found.</div>`;
+  return `
+    <table class="admin-table">
+      <thead><tr><th>ID</th><th>Name</th><th>Key</th><th>Category</th><th>Active</th><th>Nodes</th><th>Edges</th><th>Actions</th></tr></thead>
+      <tbody>
+        ${items.map((t) => `
+          <tr>
+            <td>${escapeHtml(t.id)}</td>
+            <td>${escapeHtml(t.name)}</td>
+            <td>${escapeHtml(t.tree_key)}</td>
+            <td>${escapeHtml(t.category_code || "—")}</td>
+            <td>${t.is_active ? "yes" : "no"}</td>
+            <td>${escapeHtml(t.nodes_count || 0)}</td>
+            <td>${escapeHtml(t.edges_count || 0)}</td>
+            <td>
+              <button class="action-btn" onclick="editDecisionTree(${t.id})">Edit</button>
+              <button class="action-btn" onclick="deleteDecisionTree(${t.id})">Delete</button>
+            </td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderDecisionTrees() {
+  if (decisionTreesTable) decisionTreesTable.innerHTML = buildDecisionTreesTable(state.decisionTrees || []);
+}
+
+async function loadDecisionTrees() {
+  const res = await fetch("/api/admin/decision-trees?include_inactive=true");
+  const data = await res.json();
+  state.decisionTrees = data.items || [];
+  renderDecisionTrees();
+}
+
+function clearDecisionTreeForm() {
+  if (treeEditId) treeEditId.value = "";
+  if (treeNameInput) treeNameInput.value = "";
+  if (treeKeyInput) treeKeyInput.value = "";
+  if (treeCategoryInput) treeCategoryInput.value = "";
+  if (treeActiveInput) treeActiveInput.checked = true;
+  if (treeVersionInput) treeVersionInput.value = "1.0.0";
+  if (treeStatusInput) treeStatusInput.value = "draft";
+  if (treeTriggersInput) treeTriggersInput.value = "";
+  if (treeDescriptionInput) treeDescriptionInput.value = "";
+  if (treeNodesJsonInput) treeNodesJsonInput.value = "[]";
+  if (treeEdgesJsonInput) treeEdgesJsonInput.value = "[]";
+}
+
+async function editDecisionTree(treeId) {
+  const res = await fetch(`/api/admin/decision-trees/${treeId}`);
+  const data = await res.json();
+  if (!res.ok) {
+    alert(data.detail || "Failed to load tree.");
+    return;
+  }
+  const item = data.item || {};
+  treeEditId.value = item.id || "";
+  treeNameInput.value = item.name || "";
+  treeKeyInput.value = item.tree_key || "";
+  treeCategoryInput.value = item.category_code || "";
+  treeActiveInput.checked = !!item.is_active;
+  treeVersionInput.value = item.version || "1.0.0";
+  treeStatusInput.value = item.status || "draft";
+  treeTriggersInput.value = (item.trigger_phrases || []).join(", ");
+  treeDescriptionInput.value = item.description || "";
+  treeNodesJsonInput.value = JSON.stringify(item.nodes || [], null, 2);
+  treeEdgesJsonInput.value = JSON.stringify(item.edges || [], null, 2);
+}
+
+async function saveDecisionTree() {
+  let nodes = [];
+  let edges = [];
+  try {
+    nodes = JSON.parse(treeNodesJsonInput?.value || "[]");
+    edges = JSON.parse(treeEdgesJsonInput?.value || "[]");
+  } catch (err) {
+    alert("Nodes/Edges JSON is invalid.");
+    return;
+  }
+  const payload = {
+    id: Number(treeEditId?.value || 0) || null,
+    name: (treeNameInput?.value || "").trim(),
+    tree_key: (treeKeyInput?.value || "").trim() || null,
+    category_code: (treeCategoryInput?.value || "").trim() || null,
+    is_active: !!treeActiveInput?.checked,
+    version: (treeVersionInput?.value || "1.0.0").trim(),
+    status: (treeStatusInput?.value || "draft").trim(),
+    trigger_phrases: (treeTriggersInput?.value || "").split(",").map((v) => v.trim()).filter(Boolean),
+    description: (treeDescriptionInput?.value || "").trim() || null,
+    nodes,
+    edges,
+  };
+  if (!payload.name) {
+    alert("Tree name is required.");
+    return;
+  }
+  const res = await fetch("/api/admin/decision-trees", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    alert(data.detail || "Failed to save tree.");
+    return;
+  }
+  await loadDecisionTrees();
+}
+
+async function deleteDecisionTree(treeId) {
+  const res = await fetch(`/api/admin/decision-trees/${treeId}`, { method: "DELETE" });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    alert(data.detail || "Failed to delete tree.");
+    return;
+  }
+  await loadDecisionTrees();
+}
+
 function buildSourcesTable(items) {
   if (!items.length) {
     return `<div class="empty-state">No data sources configured.</div>`;
@@ -1067,7 +1205,7 @@ async function refreshAll() {
   refreshBtn.innerHTML = `<span>↻</span><span>Refreshing...</span>`;
 
   try {
-    await Promise.all([loadSummary(), loadUnresolved(), loadFeedback(), loadDataSources(), loadQnaPairs(), loadCategories()]);
+    await Promise.all([loadSummary(), loadUnresolved(), loadFeedback(), loadDataSources(), loadQnaPairs(), loadCategories(), loadDecisionTrees()]);
   } catch (error) {
     console.error(error);
     alert("Failed to load dashboard data.");
@@ -1170,6 +1308,8 @@ window.deleteQnaPair = deleteQnaPair;
 window.editCategory = editCategory;
 window.archiveCategory = archiveCategory;
 window.loadCategorySynonyms = loadCategorySynonyms;
+window.editDecisionTree = editDecisionTree;
+window.deleteDecisionTree = deleteDecisionTree;
 
 refreshBtn.addEventListener("click", refreshAll);
 
@@ -1190,6 +1330,9 @@ if (categoriesRefreshBtn) categoriesRefreshBtn.addEventListener("click", loadCat
 if (categorySaveBtn) categorySaveBtn.addEventListener("click", saveCategory);
 if (categoryClearBtn) categoryClearBtn.addEventListener("click", clearCategoryForm);
 if (categoryAddSynonymBtn) categoryAddSynonymBtn.addEventListener("click", addCategorySynonym);
+if (treesRefreshBtn) treesRefreshBtn.addEventListener("click", loadDecisionTrees);
+if (treeSaveBtn) treeSaveBtn.addEventListener("click", saveDecisionTree);
+if (treeClearBtn) treeClearBtn.addEventListener("click", clearDecisionTreeForm);
 if (jsonFileInput) {
   jsonFileInput.addEventListener("change", async (event) => {
     const file = event.target.files && event.target.files[0];
