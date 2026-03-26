@@ -4,6 +4,7 @@ import re
 from difflib import SequenceMatcher
 from typing import List, Tuple
 
+from app.core.category_utils import category_from_question
 from app.core.config import MIN_CONTEXT_CHARS
 from app.core.constants import REFUSAL_TEXT
 from app.core.llm import generate_answer
@@ -11,6 +12,9 @@ from app.core.retrieval import Retriever
 
 
 DIRECT_MATCH_THRESHOLD = 0.80
+NEAR_MATCH_THRESHOLD = 0.66
+MIN_GROUNDED_RERANK_SCORE = 0.15
+MAX_SYNTHESIS_CITATIONS = 3
 
 
 def format_page_label(hit: dict) -> str:
@@ -126,7 +130,29 @@ def build_citation(hit: dict) -> dict:
         "heading": hit.get("heading"),
         "excerpt": hit["text"][:600],
         "score": round(float(hit.get("rerank_score", 0.0)), 4),
+        "source_metadata": {
+            "retrieval_channel": hit.get("retrieval_channel"),
+            "vector_score": hit.get("vector_score"),
+            "bm25_score": hit.get("bm25_score"),
+            "hybrid_score": hit.get("hybrid_score"),
+        },
     }
+
+
+def compact_citations(hits: list[dict], limit: int = MAX_SYNTHESIS_CITATIONS) -> list[dict]:
+    citations: list[dict] = []
+    seen: set[tuple] = set()
+
+    for hit in hits:
+        key = (hit.get("doc_name"), hit.get("page_no"), (hit.get("heading") or "").strip().lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        citations.append(build_citation(hit))
+        if len(citations) >= limit:
+            break
+
+    return citations
 
 
 def get_best_direct_match(question: str, hits: List[dict]) -> Tuple[dict | None, float, str, str]:
@@ -159,15 +185,10 @@ class QAPipeline:
 
     def ask(self, question: str) -> dict:
         normalized_question = normalize_question_text(question)
-        hits = self.retriever.retrieve(question)
+        category_hint = category_from_question(question)
+        hits, retrieval_trace = self.retriever.retrieve_with_trace(question, category_hint=category_hint)
 
-        # Soft filtering only: just remove empty/tiny junk chunks
-        grounded_hits: List[dict] = [
-            h for h in hits
-            if len((h.get("text") or "").strip()) > 60
-        ]
-
-        # Fallback so we do not refuse too early
+        grounded_hits: List[dict] = [h for h in hits if len((h.get("text") or "").strip()) > 60]
         if not grounded_hits:
             grounded_hits = hits[:5]
 
@@ -176,15 +197,19 @@ class QAPipeline:
                 "answer": REFUSAL_TEXT,
                 "grounded": False,
                 "citations": [],
+                "evidence_sources": [],
                 "answer_source": "unresolved",
+                "confidence": 0.0,
                 "debug": {
                     "retrieved": len(hits),
                     "grounded": 0,
-                    "top_rerank_score": hits[0].get("rerank_score") if hits else None,
+                    "top_rerank_score": None,
                     "flow": "refusal_no_hits",
                     "top_hits_preview": [],
+                    "retrieval_trace": retrieval_trace,
                     "query_info": {
                         "normalized_question": normalized_question,
+                        "category_hint": category_hint,
                     },
                 },
             }
@@ -198,30 +223,32 @@ class QAPipeline:
         )
 
         context_parts: List[str] = []
-        for hit in top_hits:
+        compact_for_context = compact_citations(top_hits, limit=4)
+        for citation in compact_for_context:
+            doc = citation.get("doc_name")
+            page_label = citation.get("page_label")
+            heading = citation.get("heading") or "N/A"
+            excerpt = citation.get("excerpt") or ""
             context_parts.append(
                 "\n".join(
                     [
-                        f"Document: {hit['doc_name']}",
-                        f"Page: {format_page_label(hit)}",
-                        f"Heading: {hit.get('heading') or 'N/A'}",
+                        f"Document: {doc}",
+                        f"Page: {page_label}",
+                        f"Heading: {heading}",
                         "Content:",
-                        hit["text"],
+                        excerpt,
                     ]
                 )
             )
 
         context = "\n\n---\n\n".join(context_parts).strip()
 
-        # If context still too small, fallback to top raw hits
         if len(context) < MIN_CONTEXT_CHARS:
-            fallback_hits = hits[:5]
+            fallback_hits = hits[:4]
             fallback_parts: List[str] = []
-
             for hit in fallback_hits:
                 if not (hit.get("text") or "").strip():
                     continue
-
                 fallback_parts.append(
                     "\n".join(
                         [
@@ -229,30 +256,40 @@ class QAPipeline:
                             f"Page: {format_page_label(hit)}",
                             f"Heading: {hit.get('heading') or 'N/A'}",
                             "Content:",
-                            hit["text"],
+                            hit["text"][:700],
                         ]
                     )
                 )
-
             fallback_context = "\n\n---\n\n".join(fallback_parts).strip()
             if fallback_context:
                 context = fallback_context
                 top_hits = fallback_hits
 
-        # direct exact / near-exact PDF question match
         if direct_hit and direct_chunk_answer and direct_match_score >= DIRECT_MATCH_THRESHOLD:
             answer = direct_chunk_answer
             flow = "faq_exact"
             answer_source = "faq_exact"
             citations = [build_citation(direct_hit)]
 
-        # no direct match -> synthesize from approved PDF context
+        elif direct_hit and direct_chunk_answer and direct_match_score >= NEAR_MATCH_THRESHOLD:
+            answer = direct_chunk_answer
+            flow = "faq_near"
+            answer_source = "faq_near"
+            citations = [build_citation(direct_hit)]
+
         else:
-            answer = generate_answer(question, context).strip()
-            answer = clean_answer_prefix(answer)
-            flow = "pdf_synthesized"
-            answer_source = "pdf_synthesized"
-            citations = [build_citation(hit) for hit in top_hits]
+            top_score = float(top_rerank_hit.get("rerank_score") or 0.0)
+            if top_score < MIN_GROUNDED_RERANK_SCORE:
+                answer = REFUSAL_TEXT
+                flow = "refusal_low_evidence"
+                answer_source = "unresolved"
+                citations = []
+            else:
+                answer = generate_answer(question, context).strip()
+                answer = clean_answer_prefix(answer)
+                flow = "pdf_synthesized"
+                answer_source = "pdf_synthesized"
+                citations = compact_citations(top_hits, limit=MAX_SYNTHESIS_CITATIONS)
 
         if not answer:
             answer = REFUSAL_TEXT
@@ -264,6 +301,8 @@ class QAPipeline:
             citations = []
             answer_source = "unresolved"
 
+        evidence_sources = sorted({c.get("doc_name") for c in citations if c.get("doc_name")})
+
         top_hits_preview = []
         for hit in hits[:5]:
             top_hits_preview.append(
@@ -271,16 +310,28 @@ class QAPipeline:
                     "doc_name": hit.get("doc_name"),
                     "page_label": format_page_label(hit),
                     "heading": hit.get("heading"),
+                    "retrieval_channel": hit.get("retrieval_channel"),
                     "rerank_score": hit.get("rerank_score"),
                     "text_preview": (hit.get("text") or "")[:180],
                 }
             )
 
+        confidence = 0.0
+        if grounded:
+            if answer_source == "faq_exact":
+                confidence = 1.0
+            elif answer_source == "faq_near":
+                confidence = round(float(direct_match_score), 4)
+            else:
+                confidence = round(float(top_rerank_hit.get("rerank_score") or 0.0), 4)
+
         return {
             "answer": answer,
             "grounded": grounded,
             "citations": citations,
+            "evidence_sources": evidence_sources,
             "answer_source": answer_source,
+            "confidence": confidence,
             "debug": {
                 "retrieved": len(hits),
                 "grounded": len(grounded_hits),
@@ -289,8 +340,10 @@ class QAPipeline:
                 "direct_chunk_question": direct_chunk_question,
                 "flow": flow,
                 "top_hits_preview": top_hits_preview,
+                "retrieval_trace": retrieval_trace,
                 "query_info": {
                     "normalized_question": normalized_question,
+                    "category_hint": category_hint,
                 },
             },
         }

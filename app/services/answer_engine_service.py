@@ -75,6 +75,7 @@ class AnswerEngineService:
             else:
                 response_mode = ResponseMode.GROUNDED_SYNTHESIS
 
+        result["evidence_sources"] = result.get("evidence_sources") or sorted({c.get("doc_name") for c in result.get("citations", []) if c.get("doc_name")})
         result["predicted_category"] = predicted_category
         result["response_mode"] = response_mode.value
         result["classification"] = QueryClassificationResult(
