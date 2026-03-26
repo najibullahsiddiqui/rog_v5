@@ -46,3 +46,8 @@ class DataSourceCreatePayload(BaseModel):
 
 class DataSourceStatusPayload(BaseModel):
     status: str
+
+
+class JsonConvertPayload(BaseModel):
+    target: str
+    json_text: str

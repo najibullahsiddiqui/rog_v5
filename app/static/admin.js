@@ -26,6 +26,14 @@ const sourceNameInput = document.getElementById("sourceName");
 const sourceTypeInput = document.getElementById("sourceType");
 const sourceUriInput = document.getElementById("sourceUri");
 const sourceFormatInput = document.getElementById("sourceFormat");
+const jsonConvertTarget = document.getElementById("jsonConvertTarget");
+const jsonConvertInput = document.getElementById("jsonConvertInput");
+const jsonFileInput = document.getElementById("jsonFileInput");
+const previewJsonBtn = document.getElementById("previewJsonBtn");
+const importJsonBtn = document.getElementById("importJsonBtn");
+const jsonMappingFields = document.getElementById("jsonMappingFields");
+const jsonPreviewTable = document.getElementById("jsonPreviewTable");
+const jsonErrorsBox = document.getElementById("jsonErrorsBox");
 
 const expertModal = document.getElementById("expertModal");
 const modalOverlay = document.getElementById("modalOverlay");
@@ -55,6 +63,7 @@ const state = {
   dataSources: [],
   activeSourceId: null,
   sourceDocuments: [],
+  jsonPreview: null,
 };
 
 function escapeHtml(text) {
@@ -534,6 +543,111 @@ async function triggerSourceReingest(sourceId) {
   await loadDataSources();
 }
 
+function renderJsonPreview(previewData) {
+  state.jsonPreview = previewData || null;
+  if (!jsonMappingFields || !jsonPreviewTable || !jsonErrorsBox) return;
+
+  if (!previewData) {
+    jsonMappingFields.innerHTML = "";
+    jsonPreviewTable.innerHTML = "";
+    jsonErrorsBox.innerHTML = "";
+    return;
+  }
+
+  const fields = previewData.mapping_fields || [];
+  jsonMappingFields.innerHTML = `
+    <div><strong>Target:</strong> ${escapeHtml(previewData.target || "")}</div>
+    <div><strong>Record count:</strong> ${escapeHtml(previewData.record_count || 0)}</div>
+    <div><strong>Required fields:</strong> ${escapeHtml(fields.join(", ") || "—")}</div>
+  `;
+
+  const rows = previewData.preview || [];
+  if (!rows.length) {
+    jsonPreviewTable.innerHTML = `<div class="empty-state">No records to preview.</div>`;
+  } else {
+    jsonPreviewTable.innerHTML = `
+      <table class="admin-table">
+        <thead><tr><th>Row</th><th>Mapped Fields</th><th>Extra Fields</th></tr></thead>
+        <tbody>
+          ${rows.map((r) => `
+            <tr>
+              <td>${escapeHtml(r.row)}</td>
+              <td><pre>${escapeHtml(JSON.stringify(r.mapped || {}, null, 2))}</pre></td>
+              <td>${escapeHtml((r.extra_fields || []).join(", ") || "—")}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  const errors = previewData.errors || [];
+  if (!errors.length) {
+    jsonErrorsBox.innerHTML = `<div class="empty-state">No validation errors.</div>`;
+  } else {
+    jsonErrorsBox.innerHTML = `
+      <div class="empty-state" style="color:#b91c1c; text-align:left;">
+        <strong>Validation errors (${errors.length}):</strong>
+        <ul>${errors.map((e) => `<li>${escapeHtml(e)}</li>`).join("")}</ul>
+      </div>
+    `;
+  }
+}
+
+async function previewJsonConvert() {
+  const target = (jsonConvertTarget?.value || "").trim();
+  const jsonText = (jsonConvertInput?.value || "").trim();
+  if (!target || !jsonText) {
+    alert("Please select target and provide JSON.");
+    return;
+  }
+
+  const res = await fetch("/api/admin/json-convert/preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ target, json_text: jsonText }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    alert(data.detail || "Preview failed.");
+    return;
+  }
+  renderJsonPreview(data);
+}
+
+async function importJsonConvert() {
+  const target = (jsonConvertTarget?.value || "").trim();
+  const jsonText = (jsonConvertInput?.value || "").trim();
+  if (!target || !jsonText) {
+    alert("Please select target and provide JSON.");
+    return;
+  }
+
+  const res = await fetch("/api/admin/json-convert/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ target, json_text: jsonText }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    alert(data.detail || "Import failed.");
+    return;
+  }
+
+  const msg = `Imported: ${data.created_count || 0}, Errors: ${data.error_count || 0}, Audit Log ID: ${data.audit_log_id || "n/a"}`;
+  alert(msg);
+  if (data.errors && data.errors.length) {
+    renderJsonPreview({
+      target,
+      record_count: 0,
+      mapping_fields: state.jsonPreview?.mapping_fields || [],
+      preview: state.jsonPreview?.preview || [],
+      errors: data.errors,
+    });
+  }
+  await refreshAll();
+}
+
 async function saveExpertAnswer() {
   const payload = {
     unresolved_query_id: Number(document.getElementById("expertUnresolvedId").value || 0) || null,
@@ -692,6 +806,16 @@ closeModalSecondaryBtn.addEventListener("click", closeExpertModal);
 modalOverlay.addEventListener("click", closeExpertModal);
 saveExpertBtn.addEventListener("click", saveExpertAnswer);
 if (addSourceBtn) addSourceBtn.addEventListener("click", addSource);
+if (previewJsonBtn) previewJsonBtn.addEventListener("click", previewJsonConvert);
+if (importJsonBtn) importJsonBtn.addEventListener("click", importJsonConvert);
+if (jsonFileInput) {
+  jsonFileInput.addEventListener("change", async (event) => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    const text = await file.text();
+    if (jsonConvertInput) jsonConvertInput.value = text;
+  });
+}
 
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !expertModal.classList.contains("hidden")) {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -12,6 +13,7 @@ from app.schemas import (
     DataSourceCreatePayload,
     DataSourceStatusPayload,
     ExpertAnswerPayload,
+    JsonConvertPayload,
 )
 from app.services import AnalyticsService, CategoriesService, ExpertAnswersService
 from app.repositories import AdminRepository
@@ -111,6 +113,124 @@ def set_data_source_status(data_source_id: int, payload: DataSourceStatusPayload
 def trigger_reingest(data_source_id: int):
     job_id = admin_repository.queue_reingest(data_source_id)
     return {"ok": True, "ingestion_job_id": job_id, "status": "queued"}
+
+
+def _parse_json_records(json_text: str) -> tuple[list[dict], list[str]]:
+    errors: list[str] = []
+    try:
+        payload = json.loads(json_text)
+    except json.JSONDecodeError as exc:
+        return [], [f"Invalid JSON: {exc.msg} at line {exc.lineno}, column {exc.colno}"]
+
+    if isinstance(payload, dict):
+        records = payload.get("records")
+        if records is None:
+            records = [payload]
+    elif isinstance(payload, list):
+        records = payload
+    else:
+        return [], ["JSON must be an object or array of objects"]
+
+    if not isinstance(records, list):
+        return [], ["Expected 'records' to be a list"]
+
+    normalized: list[dict] = []
+    for i, item in enumerate(records):
+        if not isinstance(item, dict):
+            errors.append(f"Row {i + 1}: expected object")
+            continue
+        normalized.append(item)
+    return normalized, errors
+
+
+def _required_fields_for_target(target: str) -> list[str]:
+    return {
+        "qna_pairs": ["question", "answer"],
+        "categories": ["code", "name"],
+        "decision_trees": ["name", "nodes"],
+        "knowledge_docs": ["title", "content"],
+    }.get(target, [])
+
+
+@router.post("/api/admin/json-convert/preview")
+def preview_json_convert(payload: JsonConvertPayload):
+    target = (payload.target or "").strip()
+    if target not in {"qna_pairs", "categories", "decision_trees", "knowledge_docs"}:
+        raise HTTPException(status_code=400, detail="Unsupported target")
+
+    records, parse_errors = _parse_json_records(payload.json_text or "")
+    mapping_fields = _required_fields_for_target(target)
+    errors = list(parse_errors)
+
+    preview: list[dict] = []
+    for idx, record in enumerate(records):
+        row_missing = [f for f in mapping_fields if f not in record or record.get(f) in (None, "")]
+        if row_missing:
+            errors.append(f"Row {idx + 1}: missing required fields: {', '.join(row_missing)}")
+
+        mapped = {f: record.get(f) for f in mapping_fields}
+        extra_keys = [k for k in record.keys() if k not in mapping_fields][:8]
+        preview.append(
+            {
+                "row": idx + 1,
+                "mapped": mapped,
+                "extra_fields": extra_keys,
+            }
+        )
+
+    return {
+        "ok": len(errors) == 0,
+        "target": target,
+        "record_count": len(records),
+        "mapping_fields": mapping_fields,
+        "preview": preview[:100],
+        "errors": errors,
+    }
+
+
+@router.post("/api/admin/json-convert/import")
+def import_json_convert(payload: JsonConvertPayload):
+    target = (payload.target or "").strip()
+    if target not in {"qna_pairs", "categories", "decision_trees", "knowledge_docs"}:
+        raise HTTPException(status_code=400, detail="Unsupported target")
+
+    records, parse_errors = _parse_json_records(payload.json_text or "")
+    if parse_errors:
+        audit_id = admin_repository.log_import_audit(
+            action="json_convert_import",
+            target=target,
+            status="failed_parse",
+            created_count=0,
+            error_count=len(parse_errors),
+            metadata={"errors": parse_errors},
+        )
+        return {"ok": False, "created_count": 0, "errors": parse_errors, "audit_log_id": audit_id}
+
+    if target == "qna_pairs":
+        created, errors = admin_repository.import_qna_pairs(records)
+    elif target == "categories":
+        created, errors = admin_repository.import_categories(records)
+    elif target == "decision_trees":
+        created, errors = admin_repository.import_decision_trees(records)
+    else:
+        created, errors = admin_repository.import_knowledge_docs(records)
+
+    audit_id = admin_repository.log_import_audit(
+        action="json_convert_import",
+        target=target,
+        status="success" if not errors else "partial",
+        created_count=created,
+        error_count=len(errors),
+        metadata={"record_count": len(records), "errors": errors[:50]},
+    )
+    return {
+        "ok": len(errors) == 0,
+        "target": target,
+        "created_count": created,
+        "error_count": len(errors),
+        "errors": errors,
+        "audit_log_id": audit_id,
+    }
 
 
 @router.post("/api/admin/expert-answer")
